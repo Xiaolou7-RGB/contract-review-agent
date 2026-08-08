@@ -1,0 +1,28 @@
+{
+  "name": "contract-review-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.0",
+    "element-plus": "^2.8.0",
+    "@element-plus/icons-vue": "^2.3.0",
+    "axios": "^1.7.0",
+    "pdfjs-dist": "^4.4.0",
+    "diff-match-patch": "^1.0.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vue-tsc": "^2.0.0",
+    "@types/diff-match-patch": "^1.0.36"
+  }
+}

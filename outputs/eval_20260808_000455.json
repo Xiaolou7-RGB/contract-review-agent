@@ -1,0 +1,493 @@
+{
+  "meta": {
+    "ts": "2026-08-08 00:04:55",
+    "collection": "civil_code_hybrid",
+    "threshold": 0.3,
+    "top_k": 3,
+    "contract_id": 38,
+    "total": 20,
+    "n_law": 10,
+    "n_compound": 3,
+    "n_clause": 3,
+    "n_generic": 2,
+    "n_meta": 2,
+    "agg": {
+      "n_formal": 6,
+      "n_colloquial": 4,
+      "n_compound_scored": 3,
+      "recall_formal": 1.0,
+      "mrr_formal": 0.9166666666666666,
+      "recall_colloquial": 0.375,
+      "mrr_colloquial": 0.25,
+      "recall_compound": 0.6666666666666666,
+      "recall_all": 0.7307692307692307,
+      "mrr_all": 0.7307692307692307,
+      "false_cite_count": 0,
+      "n_nonscorable": 7,
+      "fc_clause": 0,
+      "fc_generic": 0,
+      "fc_meta": 0,
+      "p50_ms": 9867,
+      "p95_ms": 22422
+    }
+  },
+  "results": [
+    {
+      "id": "L1",
+      "type": "LAW",
+      "style": "formal",
+      "question": "当事人一方不履行合同义务或者履行不符合约定，应当承担什么责任？",
+      "expected": [
+        577
+      ],
+      "note": "违约责任一般条款，违约责任章开篇",
+      "returned": [
+        {
+          "n": 577,
+          "article_no": "第五百七十七条",
+          "conf": 0.9995
+        },
+        {
+          "n": 583,
+          "article_no": "第五百八十三条",
+          "conf": 0.9978
+        },
+        {
+          "n": 584,
+          "article_no": "第五百八十四条",
+          "conf": 0.9964
+        }
+      ],
+      "latency_ms": 10894,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "L2",
+      "type": "LAW",
+      "style": "formal",
+      "question": "违约金条款和定金条款能否同时适用？",
+      "expected": [
+        588
+      ],
+      "note": "违约金与定金择一适用的直接依据",
+      "returned": [
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.9921
+        },
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.4772
+        }
+      ],
+      "latency_ms": 19005,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "L3",
+      "type": "LAW",
+      "style": "formal",
+      "question": "约定的违约金过分高于造成的损失的，应当如何处理？",
+      "expected": [
+        585
+      ],
+      "note": "违约金司法酌减，与口语版C2构成对照",
+      "returned": [
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.9957
+        },
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.9595
+        },
+        {
+          "n": 591,
+          "article_no": "第五百九十一条",
+          "conf": 0.8482
+        }
+      ],
+      "latency_ms": 9867,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "L4",
+      "type": "LAW",
+      "style": "formal",
+      "question": "在哪些情形下当事人可以法定解除合同？",
+      "expected": [
+        563
+      ],
+      "note": "法定解除权列举条款",
+      "returned": [
+        {
+          "n": 563,
+          "article_no": "第五百六十三条",
+          "conf": 0.9923
+        },
+        {
+          "n": 562,
+          "article_no": "第五百六十二条",
+          "conf": 0.9231
+        },
+        {
+          "n": 533,
+          "article_no": "第五百三十三条",
+          "conf": 0.8818
+        }
+      ],
+      "latency_ms": 11282,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "L5",
+      "type": "LAW",
+      "style": "formal",
+      "question": "标的物质量不符合约定的，违约责任如何承担？",
+      "expected": [
+        582
+      ],
+      "note": "瑕疵履行的违约责任",
+      "returned": [
+        {
+          "n": 617,
+          "article_no": "第六百一十七条",
+          "conf": 0.9933
+        },
+        {
+          "n": 582,
+          "article_no": "第五百八十二条",
+          "conf": 0.9894
+        },
+        {
+          "n": 610,
+          "article_no": "第六百一十条",
+          "conf": 0.9859
+        }
+      ],
+      "latency_ms": 18665,
+      "recall": 1.0,
+      "mrr": 0.5
+    },
+    {
+      "id": "L6",
+      "type": "LAW",
+      "style": "formal",
+      "question": "因不可抗力不能履行合同的，能否免除违约责任？",
+      "expected": [
+        590
+      ],
+      "note": "不可抗力免责，与口语版C4构成对照",
+      "returned": [
+        {
+          "n": 590,
+          "article_no": "第五百九十条",
+          "conf": 0.9998
+        },
+        {
+          "n": 577,
+          "article_no": "第五百七十七条",
+          "conf": 0.797
+        },
+        {
+          "n": 580,
+          "article_no": "第五百八十条",
+          "conf": 0.7511
+        }
+      ],
+      "latency_ms": 14005,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "C1",
+      "type": "LAW",
+      "style": "colloquial",
+      "question": "对方收了钱一直不发货，我该怎么办？",
+      "expected": [
+        577,
+        580
+      ],
+      "note": "口语化违约+非金钱债务实际履行；无任何法言法语",
+      "returned": [
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.6554
+        },
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.6446
+        },
+        {
+          "n": 593,
+          "article_no": "第五百九十三条",
+          "conf": 0.4235
+        }
+      ],
+      "latency_ms": 15500,
+      "recall": 0.0,
+      "mrr": 0.0
+    },
+    {
+      "id": "C2",
+      "type": "LAW",
+      "style": "colloquial",
+      "question": "合同里的违约金太高了，我真的要全额赔吗？",
+      "expected": [
+        585
+      ],
+      "note": "L3的口语对照：测词汇鸿沟",
+      "returned": [
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.9192
+        },
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.9094
+        },
+        {
+          "n": 584,
+          "article_no": "第五百八十四条",
+          "conf": 0.9016
+        }
+      ],
+      "latency_ms": 7873,
+      "recall": 1.0,
+      "mrr": 0.5
+    },
+    {
+      "id": "C3",
+      "type": "LAW",
+      "style": "colloquial",
+      "question": "我交了定金后反悔不想买了，定金能要回来吗？",
+      "expected": [
+        586,
+        587
+      ],
+      "note": "给付定金方违约→无权请求返还",
+      "returned": [
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.8528
+        },
+        {
+          "n": 587,
+          "article_no": "第五百八十七条",
+          "conf": 0.5524
+        },
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.386
+        }
+      ],
+      "latency_ms": 6801,
+      "recall": 0.5,
+      "mrr": 0.5
+    },
+    {
+      "id": "C4",
+      "type": "LAW",
+      "style": "colloquial",
+      "question": "仓库被雷劈了着火，要交的货全烧了，我还要赔吗？",
+      "expected": [
+        590
+      ],
+      "note": "L6的口语对照：测词汇鸿沟",
+      "returned": [
+        {
+          "n": 833,
+          "article_no": "第八百三十三条",
+          "conf": 0.5598
+        }
+      ],
+      "latency_ms": 8193,
+      "recall": 0.0,
+      "mrr": 0.0
+    },
+    {
+      "id": "M1",
+      "type": "COMPOUND",
+      "style": "compound",
+      "question": "违约金和定金能同时适用吗？如果违约金约定过高该怎么处理？",
+      "expected": [
+        588,
+        585
+      ],
+      "note": "双意图复合问题",
+      "returned": [
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.9912
+        },
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.9623
+        },
+        {
+          "n": 591,
+          "article_no": "第五百九十一条",
+          "conf": 0.6707
+        }
+      ],
+      "latency_ms": 23471,
+      "recall": 1.0,
+      "mrr": 1.0
+    },
+    {
+      "id": "M2",
+      "type": "COMPOUND",
+      "style": "compound",
+      "question": "合同在什么情况下可以解除？解除之后还需要赔偿损失吗？",
+      "expected": [
+        563,
+        566
+      ],
+      "note": "解除条件+解除后果双意图",
+      "returned": [
+        {
+          "n": 563,
+          "article_no": "第五百六十三条",
+          "conf": 0.9773
+        },
+        {
+          "n": 562,
+          "article_no": "第五百六十二条",
+          "conf": 0.9062
+        },
+        {
+          "n": 565,
+          "article_no": "第五百六十五条",
+          "conf": 0.836
+        }
+      ],
+      "latency_ms": 16295,
+      "recall": 0.5,
+      "mrr": 1.0
+    },
+    {
+      "id": "M3",
+      "type": "COMPOUND",
+      "style": "compound",
+      "question": "交了定金的一方违约，定金怎么处理？定金不够弥补损失怎么办？",
+      "expected": [
+        587,
+        588
+      ],
+      "note": "定金罚则+定金不足补赔双意图",
+      "returned": [
+        {
+          "n": 588,
+          "article_no": "第五百八十八条",
+          "conf": 0.9942
+        },
+        {
+          "n": 591,
+          "article_no": "第五百九十一条",
+          "conf": 0.9728
+        },
+        {
+          "n": 585,
+          "article_no": "第五百八十五条",
+          "conf": 0.9686
+        }
+      ],
+      "latency_ms": 22422,
+      "recall": 0.5,
+      "mrr": 1.0
+    },
+    {
+      "id": "K1",
+      "type": "CLAUSE",
+      "style": "clause",
+      "question": "这份合同第四条写的是什么内容？",
+      "expected": [],
+      "note": "答案在合同条款表里，不应触发法条引用",
+      "returned": [],
+      "latency_ms": 8,
+      "false_citations": 0
+    },
+    {
+      "id": "K2",
+      "type": "CLAUSE",
+      "style": "clause",
+      "question": "审查发现这份合同有哪些风险？哪个风险最高？",
+      "expected": [],
+      "note": "答案在审查卡片里，不应触发法条引用",
+      "returned": [],
+      "latency_ms": 5,
+      "false_citations": 0
+    },
+    {
+      "id": "K3",
+      "type": "CLAUSE",
+      "style": "clause",
+      "question": "对这份合同有什么修改建议？",
+      "expected": [],
+      "note": "答案在修订建议里，不应触发法条引用",
+      "returned": [],
+      "latency_ms": 5,
+      "false_citations": 0
+    },
+    {
+      "id": "G1",
+      "type": "GENERIC",
+      "style": "generic",
+      "question": "离职后竞业限制的经济补偿金每月标准是多少？",
+      "expected": [],
+      "note": "属劳动合同法范畴，民法典库（1-988条）外，测库外兜底",
+      "returned": [],
+      "latency_ms": 5,
+      "false_citations": 0
+    },
+    {
+      "id": "G2",
+      "type": "GENERIC",
+      "style": "generic",
+      "question": "劳动争议申请仲裁的时效期间是多久？",
+      "expected": [],
+      "note": "属劳动争议调解仲裁法范畴，库外，测库外兜底",
+      "returned": [],
+      "latency_ms": 4,
+      "false_citations": 0
+    },
+    {
+      "id": "X1",
+      "type": "META",
+      "style": "meta",
+      "question": "你可以干什么？",
+      "expected": [],
+      "note": "能力询问，今日门控后应为0引用",
+      "returned": [],
+      "latency_ms": 4,
+      "false_citations": 0
+    },
+    {
+      "id": "X2",
+      "type": "META",
+      "style": "meta",
+      "question": "你好",
+      "expected": [],
+      "note": "问候语，应为0引用",
+      "returned": [],
+      "latency_ms": 4,
+      "false_citations": 0
+    }
+  ]
+}

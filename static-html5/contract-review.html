@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合同审查助手</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --bg: #f8fafc;
+    --card-bg: #fff;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --radius: 8px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .container { max-width: 800px; margin: 0 auto; padding: 2rem 1rem; }
+
+  h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--primary);
+    background: #eff6ff;
+  }
+  .upload-zone p { color: var(--text-muted); }
+  .upload-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+  input[type="file"] { display: none; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border: none; border-radius: var(--radius);
+    font-size: 0.9rem; font-weight: 500; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+  /* Status indicator */
+  .status-badge {
+    display: inline-block; padding: 0.25rem 0.75rem;
+    border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+  }
+  .status-pending   { background: #f1f5f9; color: var(--text-muted); }
+  .status-parsing   { background: #dbeafe; color: #1d4ed8; }
+  .status-reviewing { background: #fef3c7; color: #b45309; }
+  .status-retrieving{ background: #ede9fe; color: #6d28d9; }
+  .status-revising  { background: #fce7f3; color: #be185d; }
+  .status-completed { background: #dcfce7; color: #15803d; }
+  .status-failed    { background: #fee2e2; color: #b91c1c; }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 8px; background: var(--border); border-radius: 4px;
+    margin-top: 0.5rem; overflow: hidden;
+  }
+  .progress-bar .fill {
+    height: 100%; background: var(--primary);
+    border-radius: 4px; transition: width 0.5s ease;
+    width: 0%;
+  }
+
+  /* Report */
+  .clause-block {
+    border-left: 3px solid var(--border);
+    padding: 0.75rem 1rem; margin-bottom: 0.75rem;
+    background: #f8fafc; border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .clause-block.high  { border-color: var(--danger); }
+  .clause-block.medium { border-color: var(--warning); }
+  .clause-block.low  { border-color: var(--primary); }
+
+  .risk-badge {
+    display: inline-block; padding: 0.125rem 0.5rem;
+    border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+  }
+  .risk-high   { background: #fee2e2; color: #b91c1c; }
+  .risk-medium { background: #fef3c7; color: #b45309; }
+  .risk-low    { background: #dbeafe; color: #1d4ed8; }
+
+  .disclaimer {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius);
+    padding: 1rem; margin-top: 1.5rem; font-size: 0.85rem; color: #92400e;
+  }
+
+  .hidden { display: none !important; }
+
+  .btn-row { display: flex; gap: 0.75rem; margin-top: 1rem; }
+
+  @media (max-width: 640px) {
+    .container { padding: 1rem 0.5rem; }
+    .card { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>合同审查助手</h1>
+    <p class="subtitle">上传合同文件，AI 自动审查风险点</p>
+  </header>
+
+  <!-- Upload Section -->
+  <div class="card" id="upload-section">
+    <h2>上传合同</h2>
+    <div class="upload-zone" id="upload-zone">
+      <div class="icon">&#128196;</div>
+      <p>支持 PDF、DOCX、TXT 格式</p>
+      <p style="font-size:0.8rem;margin-top:0.5rem">点击选择文件或拖拽到此处</p>
+    </div>
+    <input type="file" id="file-input" accept=".pdf,.docx,.txt">
+    <div id="file-info" class="hidden" style="margin-top:1rem">
+      <p id="file-name" style="font-weight:600"></p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-upload">开始审查</button>
+        <button class="btn btn-outline" id="btn-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress Section -->
+  <div class="card hidden" id="progress-section">
+    <h2>审查进度</h2>
+    <div id="status-display">
+      <span class="status-badge" id="status-badge">等待中</span>
+      <span id="status-text" style="margin-left:0.75rem;color:var(--text-muted)"></span>
+    </div>
+    <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
+    <p id="progress-message" style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem"></p>
+  </div>
+
+  <!-- Report Section -->
+  <div class="card hidden" id="report-section">
+    <h2>审查报告</h2>
+    <div id="report-content"></div>
+    <div class="disclaimer">
+      &#9888; 免责声明：本报告由AI自动生成，仅供参考，不构成法律意见。所有审查结果需经执业律师审核确认后方可作为决策依据。
+    </div>
+  </div>
+
+  <!-- Error Section -->
+  <div class="card hidden" id="error-section" style="border-color:var(--danger)">
+    <h2 style="color:var(--danger)">审查失败</h2>
+    <p id="error-message"></p>
+    <button class="btn btn-outline" onclick="resetUI()" style="margin-top:1rem">重新开始</button>
+  </div>
+
+</div>
+
+<script>
+const API_BASE = window.location.origin + '/api/v1';
+
+// ── DOM refs
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+const fileInfo = document.getElementById('file-info');
+const fileName = document.getElementById('file-name');
+const btnUpload = document.getElementById('btn-upload');
+const btnCancel = document.getElementById('btn-cancel');
+const uploadSection = document.getElementById('upload-section');
+const progressSection = document.getElementById('progress-section');
+const reportSection = document.getElementById('report-section');
+const errorSection = document.getElementById('error-section');
+const statusBadge = document.getElementById('status-badge');
+const statusText = document.getElementById('status-text');
+const progressFill = document.getElementById('progress-fill');
+const progressMessage = document.getElementById('progress-message');
+const reportContent = document.getElementById('report-content');
+const errorMessage = document.getElementById('error-message');
+
+let selectedFile = null;
+
+// ── Upload zone events
+uploadZone.addEventListener('click', function() { fileInput.click(); });
+uploadZone.addEventListener('dragover', function(e) { e.preventDefault(); this.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', function() { this.classList.remove('dragover'); });
+uploadZone.addEventListener('drop', function(e) {
+  e.preventDefault();
+  this.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', function() {
+  if (this.files.length) handleFile(this.files[0]);
+});
+
+function handleFile(file) {
+  const validExts = ['.pdf','.docx','.txt'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!validExts.includes(ext)) {
+    alert('不支持的文件格式: ' + ext + '。仅支持 PDF、DOCX、TXT。');
+    return;
+  }
+  selectedFile = file;
+  fileName.textContent = file.name + ' (' + formatSize(file.size) + ')';
+  fileInfo.classList.remove('hidden');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+btnCancel.addEventListener('click', resetUI);
+
+// ── Upload & Run
+btnUpload.addEventListener('click', async function() {
+  if (!selectedFile) return;
+
+  btnUpload.disabled = true;
+  btnUpload.textContent = '上传中...';
+
+  try {
+    // Step 1: Upload
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    const uploadResp = await fetch(API_BASE + '/contract/upload', {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    });
+
+    if (!uploadResp.ok) {
+      const err = await uploadResp.json();
+      throw new Error(err.detail || 'Upload failed');
+    }
+
+    const uploadResult = await uploadResp.json();
+    const contractId = uploadResult.contract_id;
+
+    // Show progress
+    uploadSection.classList.add('hidden');
+    progressSection.classList.remove('hidden');
+    updateStatus('pending', '已上传，正在启动审查...');
+
+    // Step 2: Trigger review
+    const runResp = await fetch(API_BASE + '/contract/run/' + contractId, {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (!runResp.ok) {
+      const err = await runResp.json();
+      throw new Error(err.detail || 'Failed to start review');
+    }
+
+    // Step 3: Stream SSE progress
+    const token = document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1] || 'anonymous';
+    const streamResp = await fetch(
+      API_BASE + '/contract/run/' + contractId + '/stream?token=' + encodeURIComponent(token),
+      { credentials: 'include' }
+    );
+
+    const reader = streamResp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          try {
+            const data = JSON.parse(line.slice(5));
+            handleProgress(data);
+          } catch (e) { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    // Step 4: Fetch final report
+    const reportResp = await fetch(API_BASE + '/contract/report/' + contractId, {
+      credentials: 'include',
+    });
+
+    if (!reportResp.ok) throw new Error('Failed to fetch report');
+
+    const report = await reportResp.json();
+    showReport(report);
+
+  } catch (err) {
+    console.error(err);
+    progressSection.classList.add('hidden');
+    errorSection.classList.remove('hidden');
+    errorMessage.textContent = err.message || '未知错误';
+  }
+});
+
+function handleProgress(data) {
+  const status = data.status || '';
+  updateStatus(status, '');
+
+  const progressMap = {
+    'pending': 5, 'parsing': 25, 'reviewing': 50,
+    'retrieving': 75, 'revising': 90, 'completed': 100, 'failed': 100
+  };
+  progressFill.style.width = (progressMap[status] || 0) + '%';
+
+  const messages = {
+    'parsing': '正在拆解合同条款...',
+    'reviewing': '正在多维度评审风险...',
+    'retrieving': '正在检索法律法规和判例...',
+    'revising': '正在生成修订建议...',
+    'completed': '审查完成！',
+    'failed': '审查失败: ' + (data.error || '未知错误'),
+  };
+  progressMessage.textContent = messages[status] || '';
+}
+
+function updateStatus(status, text) {
+  statusBadge.textContent = statusLabels[status] || status;
+  statusBadge.className = 'status-badge status-' + status;
+  statusText.textContent = text;
+}
+
+const statusLabels = {
+  'pending': '等待中', 'parsing': '条款拆解中',
+  'reviewing': '风险评审中', 'retrieving': '法条检索中',
+  'revising': '修订建议中', 'completed': '已完成', 'failed': '失败'
+};
+
+function showReport(report) {
+  progressSection.classList.add('hidden');
+  reportSection.classList.remove('hidden');
+
+  let html = '<p><strong>合同类型：</strong>' + (report.contract_type || '未识别') + '</p>';
+  html += '<p><strong>状态：</strong>' + (statusLabels[report.status] || report.status) + '</p>';
+  html += '<hr style="margin:1rem 0;border-color:var(--border)">';
+
+  const clauses = report.clauses || [];
+  if (clauses.length > 0) {
+    html += '<h3 style="margin-bottom:0.75rem">合同条款</h3>';
+    for (const clause of clauses) {
+      const levelClass = clause.level === '高' ? 'high' : clause.level === '中' ? 'medium' : 'low';
+      html += '<div class="clause-block ' + levelClass + '">';
+      if (clause.title) html += '<strong>' + clause.title + '</strong><br>';
+      html += '<span style="font-size:0.85rem;color:var(--text-muted)">条款 #' + clause.seq_no + '</span>';
+      html += '<p style="margin-top:0.5rem">' + escapeHtml(clause.content || '').substring(0, 500) + '</p>';
+      html += '</div>';
+    }
+  }
+
+  const evidence = report.evidence || [];
+  if (evidence.length > 0) {
+    html += '<h3 style="margin-top:1.5rem;margin-bottom:0.75rem">法律依据</h3>';
+    for (const ev of evidence.slice(0, 10)) {
+      html += '<div class="clause-block">';
+      html += '<p style="font-size:0.8rem;color:var(--text-muted)">来源: ' + ev.source_collection + '</p>';
+      html += '<p>' + escapeHtml(ev.quote || '').substring(0, 300) + '</p>';
+      if (ev.is_human_review) html += '<span class="risk-badge risk-medium">需人工核实</span>';
+      html += '</div>';
+    }
+  }
+
+  reportContent.innerHTML = html;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function resetUI() {
+  selectedFile = null;
+  fileInput.value = '';
+  fileInfo.classList.add('hidden');
+  progressSection.classList.add('hidden');
+  reportSection.classList.add('hidden');
+  errorSection.classList.add('hidden');
+  uploadSection.classList.remove('hidden');
+  btnUpload.disabled = false;
+  btnUpload.textContent = '开始审查';
+  progressFill.style.width = '0%';
+  reportContent.innerHTML = '';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[QA-0] cleaned stale QA data; contract 9999 ready
+[QA-1] session created: id=3
+[QA-2/Q1] message_id=8 events=238 answer_len=413 citations=3 finished=done
+[QA-2/Q1] answer: 根据审查结果，本合同主要存在以下风险：
+
+1. **违约责任条款（高风险）**：违约金约定为合同总额的50%，明显过高，可能超过实际损失。依据《民法典》第585条，法院可依申请予以调减。建议将违约金调整至与实际损失相匹配的比例（通常不超过合同总额的20%-30%），或约定以实际损失为限。
+
+2. **付款条款（高风险）**：条款仅表述为“甲方向乙方采购货物”，未明确货物单价、总价、付款方式、付款期限、结算币种等关键财务要素，存在较大履约不确定性。建议补充货物清单及单价、合同总金额、付款节点与比例、付款方式、逾期付款责任及发票开具要求。
+
+3. **保密条款（中风险）**：条款过于笼统，仅约定“双方应保守商业秘密”，未明确保密信息的定义和范围、保密期限、例外情形及违约责任。建议细化保密信息范围、明确保密期限（如合同终止后2-3年）、列举例外情形，并约定具体违约责任。
+
+以上风险结论仅供参考，最终请以执业律师意见为准。
+[QA-2/Q1] citations: [{"ref": "[1]", "source_id": "468207728981709339", "article_no": "第八百五十八条", "chapter": "合同", "collection": "civil_code_hybrid", "score": 0.091, "quote": "技术开发合同履行过程中，因出现无法克服的技术困难，致使研究开发失败或者部分失败的，该风险由当事人约定；没有约定或者约定不明确，依据本法第五百一十条的规定仍不能确定的，风险由当事人合理分担。\n\n当事人一方发现前款规定的可能致使研究开发失败或者部分失败的情形时，应当及时通知另一方并采取适当措施减少损失；没有及时通知并采取适当措施，致使损失扩大的，应当就扩大的损失承担责任。"}, {"ref": "[2]", "source_id": "468207728981708981", "article_no": "第五百零一条", "chapter": "合同", "collection": "civil_code_hybrid", "score": 0.0066, "quote": "当事人在订立合同过程中知悉的商业秘密或者其他应当保密的信息，无论合同是否成立，不得泄露或者不正当地使用；泄露、不正当地使用该商业秘密或者信息，造成对方损失的，应当承担赔偿责任。\n\n第三章合同的效力"}, {"ref": "[3]", "source_id": "468207728981708951", "article_no": "第四百七十一条", "chapter": "合同", "collection": "civil_code_hybrid", "score": 0.0042, "quote": "当事人订立合同，可以采取要约、承诺方式或者其他方式。"}]
+
+[QA-3/Q2] message_id=10 events=245 answer_len=475 citations=3 finished=done
+[QA-3/Q2] answer: 根据审查结果，违约责任条款（违约金为合同总额50%）的法律依据主要来自以下内容：
+
+- 审查结果中引用了《民法典》第585条（对应上下文中的依据 `civil_code_hybrid, source_id=468207728981709065`），该条规定：约定的违约金过分高于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以适当减少。这是认定50%违约金过高并建议调减的核心依据。
+
+- 实时检索到的法律依据中，[2]《民法典》第五百八十二条（合同）规定：履行不符合约定的，应当按照当事人的约定承担违约责任。对违约责任没有约定或者约定不明确，依据本法第五百一十条的规定仍不能确定的，受损害方根据标的的性质以及损失的大小，可以合理选择请求对方承担修理、重作、更换、退货、减少价款或者报酬等违约责任。
+
+- 此外，[3]《民法典》第一百八十六条（总则）规定：因当事人一方的违约行为，损害对方人身权益、财产权益的，受损害方有权选择请求其承担违约责任或者侵权责任。
+
+请注意，以上法律依据均来自上下文中的引用，具体适用情况建议以执业律师意见为准。
+[QA-3/Q2] citations: [{"ref": "[1]", "source_id": "468207728981709097", "article_no": "第六百一十七条", "chapter": "合同", "collection": "civil_code_hybrid", "score": 0.3812, "quote": "出卖人交付的标的物不符合质量要求的，买受人可以依据本法第五百八十二条至第五百八十四条的规定请求承担违约责任。"}, {"ref": "[2]", "source_id": "468207728981709062", "article_no": "第五百八十二条", "chapter": "合同", "collection": "civil_code_hybrid", "score": 0.3725, "quote": "履行不符合约定的，应当按照当事人的约定承担违约责任。对违约责任没有约定或者约定不明确，依据本法第五百一十条的规定仍不能确定的，受损害方根据标的的性质以及损失的大小，可以合理选择请求对方承担修理、重作、更换、退货、减少价款或者报酬等违约责任。"}, {"ref": "[3]", "source_id": "468207728981708662", "article_no": "第一百八十六条", "chapter": "总则", "collection": "civil_code_hybrid", "score": 0.1644, "quote": "因当事人一方的违约行为，损害对方人身权益、财产权益的，受损害方有权选择请求其承担违约责任或者侵权责任。"}]
+
+[QA-3] Q2 citations: ['第六百一十七条', '第五百八十二条', '第一百八十六条']
+[QA-4] citation [1] source_id=468207728981709097 -> Milvus OK (article_no=第六百一十七条)
+[QA-4] citation [2] source_id=468207728981709062 -> Milvus OK (article_no=第五百八十二条)
+[QA-4] citation [3] source_id=468207728981708662 -> Milvus OK (article_no=第一百八十六条)
+[QA-5/Q3] message_id=12 events=41 answer_len=68 citations=3 finished=done
+[QA-5/Q3] answer: 抱歉，我仅负责本合同（买卖类型）的审查问答，无法为您创作诗歌。如果您对本合同的条款内容、审查结果或修订建议有任何疑问，我很乐意为您解答。
+[QA-5/Q3] citations: [{"ref": "[1]", "source_id": "468207728981708728", "article_no": "第二百五十条", "chapter": "物权", "collection": "civil_code_hybrid", "score": 0.0, "quote": "森林、山岭、草原、荒地、滩涂等自然资源，属于国家所有，但是法律规定属于集体所有的除外。"}, {"ref": "[2]", "source_id": "468207728981708725", "article_no": "第二百四十七条", "chapter": "物权", "collection": "civil_code_hybrid", "score": 0.0, "quote": "矿藏、水流、海域属于国家所有。"}, {"ref": "[3]", "source_id": "468207728981708736", "article_no": "第二百五十八条", "chapter": "物权", "collection": "civil_code_hybrid", "score": 0.0, "quote": "国家所有的财产受法律保护，禁止任何组织或者个人侵占、哄抢、私分、截留、破坏。"}]
+
+[QA-5] scope guard OK: off-topic answer contains no [n] citations
+[QA-6] re-stream rejected with 409 OK
+[QA-7] cross-user session blocked with 403 OK
+[QA-8] DB persist OK: 6 messages, all completed, citations match
+[QA-9] demo mode (no token) OK: session 4 created and readable
