@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     pkulaw_token: str = ""
     pkulaw_case_url: str = "https://apim-gateway.pkulaw.com/mcp-case"
     pkulaw_timeout: float = 8.0
+    # MCP 语义路由开关：True=映射表+LLM refine 定向触发；False=回滚到旧"仅按风险等级触发"
+    enable_case_semantic_route: bool = True
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

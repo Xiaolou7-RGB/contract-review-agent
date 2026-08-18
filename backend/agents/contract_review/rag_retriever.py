@@ -5,12 +5,15 @@ performs hybrid search + rerank, and produces Evidence with mandatory source_id.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
 
 from backend.agents.contract_review.schemas import ContractReviewState
 from backend.agents.contract_review.degradation import with_degradation
+from backend.config import get_settings
+from backend.core.llm import get_llm
 from backend.core.rag import get_kb_client
 from backend.mcp.pkulaw_client import search_cases
 
@@ -70,6 +73,101 @@ def _route_collections(risk_type: str, dimension: str) -> list[str]:
 
     # Fallback: search all
     return DEFAULT_COLLECTIONS
+
+
+# ── MCP 判例语义路由（映射表 + LLM refine）─────────────────
+# 旧逻辑：仅按 level=="高" 触发北大法宝 MCP。
+# 新逻辑（语义路由）：先由映射表按 risk_type 判定「是否需要真实判例佐证」，
+# 再对命中的风险用 LLM 把法条向 search_query 改写为判例向 fulltext 检索词。
+# 目标：额度更省、判例命中更准；任何失败静默降级，绝不中断主流程。
+
+CASE_ROUTE_MAP: dict[str, dict[str, Any]] = {
+    # ── 判例能佐证裁判尺度：need_case=True（高风险时调 MCP）──
+    "违约风险":       {"need_case": True, "dimension": "合同违约责任纠纷", "hint": "违约金标准 违约认定"},
+    "赔偿条款失衡":   {"need_case": True, "dimension": "违约金司法调减",   "hint": "违约金过高 司法调减"},
+    "合同无效风险":   {"need_case": True, "dimension": "合同效力确认纠纷", "hint": "合同无效 法定情形"},
+    "免责条款过宽":   {"need_case": True, "dimension": "免责条款效力",     "hint": "格式条款 免责无效"},
+    "担保无效":       {"need_case": True, "dimension": "担保合同效力",     "hint": "担保无效 情形"},
+    "竞业限制无效":   {"need_case": True, "dimension": "竞业限制纠纷",     "hint": "竞业限制 效力 补偿"},
+    "争议解决不利":   {"need_case": True, "dimension": "协议管辖 管辖权异议", "hint": "协议管辖 效力"},
+    "劳动合规风险":   {"need_case": True, "dimension": "劳动争议",         "hint": "试用期 解除 合法性"},
+    # ── 商务条款 / 新法判例少：need_case=False（跳过，省额度）──
+    "财务风险":       {"need_case": False},
+    "价格条款不明":   {"need_case": False},
+    "付款条件不合理": {"need_case": False},
+    "知识产权归属不明": {"need_case": False},
+    "保密义务过宽":   {"need_case": False},
+    "数据保护合规":   {"need_case": False},
+    "权责不对等":     {"need_case": False},
+    "合规风险":       {"need_case": False},
+}
+
+# LLM refine 超时（与 QA 侧 HyDE 对齐）
+_CASE_REFINE_TIMEOUT_SECONDS = 20.0
+
+_CASE_REFINE_SYSTEM_PROMPT = (
+    "你是法律案例检索助手。给定合同风险类型、判例方向、风险说明和条款原文，"
+    "请提炼一个适合「司法判例全文检索」的精简查询词（30字以内），"
+    "采用「案由 + 争议焦点 + 关键事实」风格，便于命中真实裁判文书。"
+    "要求：只输出查询词本身；不要输出任何解释、标点或序号。"
+)
+
+
+def _case_route_for(risk_type: str) -> dict[str, Any] | None:
+    """按 risk_type 查判例路由；未知类型返回 None（调用方默认不调）。"""
+    return CASE_ROUTE_MAP.get(risk_type)
+
+
+def _case_refine_llm():
+    """复用 review 模型实例（temperature=0 确定性）。"""
+    return get_llm("review")
+
+
+async def _refine_case_query(
+    route: dict[str, Any],
+    card: dict[str, Any],
+    clause: dict[str, Any],
+) -> str:
+    """LLM 把法条向 query 改写为判例向 fulltext 检索词。
+
+    降级顺序：route.hint + 原 search_query → suggestion[:128]。任何失败返回
+    降级 query，绝不抛异常（与 QA 侧 HyDE 的降级策略一致）。
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    # ── 降级 query：hint + 原 search_query（判例检索仍有意义）──
+    fallback = " ".join(
+        p for p in [
+            route.get("hint", ""),
+            (card.get("search_query") or "").strip(),
+        ] if p
+    ) or (card.get("suggestion") or "").strip()[:128]
+
+    try:
+        llm = _case_refine_llm()
+        ctx = "\n".join(
+            p for p in [
+                f"风险类型：{card.get('risk_type', '')}",
+                f"判例方向：{route.get('dimension', '')}",
+                f"风险说明：{(card.get('suggestion') or '').strip()[:200]}",
+                f"条款原文：{(clause.get('content') or '').strip()[:200]}",
+            ] if p
+        )
+        messages = [
+            SystemMessage(content=_CASE_REFINE_SYSTEM_PROMPT),
+            HumanMessage(content=ctx),
+        ]
+        resp = await asyncio.wait_for(
+            llm.ainvoke(messages), timeout=_CASE_REFINE_TIMEOUT_SECONDS
+        )
+        content = getattr(resp, "content", "") or ""
+        refined = content.strip() if isinstance(content, str) else str(content).strip()
+        # fulltext 检索词上限（pkulaw_client 内部也截断 [:100]）
+        refined = refined[:100]
+        return refined or fallback
+    except Exception:
+        logger.warning("MCP case query refine failed; falling back to hint/search_query")
+        return fallback
 
 
 # ── Chinese numeral conversion (law article numbers) ───────
@@ -388,28 +486,41 @@ async def retrieve_evidence(
                     "href": "",
                 })
 
-        # ── 北大法宝 MCP：高风险条款补真实判例（在线增强，失败降级）──
-        # 只对「高」风险条款调 MCP，控制额度消耗，且形成「离线库兜底 + 在线增强」架构。
+        # ── 北大法宝 MCP：语义路由 + 高风险触发（在线增强，失败降级）──
+        # 1) level=="高" 才进入；2) 映射表 need_case=True 才调（未知 risk_type 默认不调，省额度）；
+        # 3) LLM refine 把法条向 query 改写成判例向 query，失败降级 hint。
         if card.get("level") == "高":
-            cases = await search_cases(query)
-            for c in cases:
-                quote = f"{c['title']}（{c['case_no']}）{c['court']} {c['date']}"
-                if c.get("case_gist"):
-                    quote += f" 裁判要旨：{c['case_gist'][:120]}"
-                all_evidence.append({
-                    "clause_id": clause_id,
-                    "source_id": c["case_no"] or c["title"],
-                    "source_collection": "pkulaw_case",
-                    "quote": quote,
-                    "relevance": "真实判例",
-                    "confidence": 0.6,
-                    "is_human_review": False,
-                    "href": "",
-                })
-            if cases:
-                logger.info(
-                    f"北大法宝补 {len(cases)} 条真实案例 for clause={clause_id} risk={risk_type}"
-                )
+            case_query = query
+            if get_settings().enable_case_semantic_route:
+                route = _case_route_for(risk_type)
+                if route is None or not route.get("need_case"):
+                    logger.info(
+                        f"语义路由：risk_type={risk_type!r} 判例佐证价值低，跳过 MCP (clause={clause_id})"
+                    )
+                    case_query = None
+                else:
+                    case_query = await _refine_case_query(route, card, clause)
+
+            if case_query:
+                cases = await search_cases(case_query)
+                for c in cases:
+                    quote = f"{c['title']}（{c['case_no']}）{c['court']} {c['date']}"
+                    if c.get("case_gist"):
+                        quote += f" 裁判要旨：{c['case_gist'][:120]}"
+                    all_evidence.append({
+                        "clause_id": clause_id,
+                        "source_id": c["case_no"] or c["title"],
+                        "source_collection": "pkulaw_case",
+                        "quote": quote,
+                        "relevance": "真实判例",
+                        "confidence": 0.6,
+                        "is_human_review": False,
+                        "href": "",
+                    })
+                if cases:
+                    logger.info(
+                        f"北大法宝补 {len(cases)} 条真实案例 for clause={clause_id} risk={risk_type}"
+                    )
 
     logger.info(f"RAG retrieval complete: {len(all_evidence)} evidence records")
     return all_evidence
