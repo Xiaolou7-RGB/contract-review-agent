@@ -150,8 +150,8 @@ def check_contract_term(clauses: list[dict]) -> RuleFinding | None:
     )
 
 
-def check_payment_terms(clauses: list[dict]) -> RuleFinding | None:
-    """付款条款（适用于买卖、服务类合同）"""
+def check_payment_terms(clauses: list[dict], contract_type: str = "") -> RuleFinding | None:
+    """付款条款（适用于买卖、服务、借款类合同）"""
     return _check_essential_clause(
         clauses,
         ["付款", "支付", "价款", "费用", "报酬", "价格", "金额"],
@@ -510,6 +510,211 @@ def check_blank_fields(text: str, _clauses=None) -> list[RuleFinding]:
     return findings
 
 
+# ── Category G: Lease (租赁合同) ────────────────────────────
+
+def check_lease_term_limit(clauses: list[dict], contract_type: str) -> list[RuleFinding]:
+    """租赁期限超20年（民法典705条：超过部分无效）"""
+    if contract_type != "租赁":
+        return []
+    findings = []
+    full_text = "\n".join(c.get("content", "") for c in clauses)
+    for m in re.finditer(r"(?:租赁期限|租期|租赁期|租约期)\D{0,6}(\d{1,3})\s*年", full_text):
+        years = int(m.group(1))
+        if years <= 20:
+            continue
+        # 负向过滤：匹配片段内（如"租赁期限不超过25年"）含上限限定词则视为已设上限，不误报
+        if re.search(r"不超过|不高于|少于|不得超|上限", m.group(0)):
+            continue
+        findings.append(RuleFinding(
+            "R501", "lease", "高",
+            f"租赁期限{years}年，超过《民法典》第705条规定的20年上限，超过部分无效",
+            suggestion="建议将租赁期限调整至20年以内，或到期后续签",
+        ))
+    return findings
+
+
+def check_lease_rent(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """租金条款缺失（民法典704条：租赁合同应含租金）"""
+    if contract_type != "租赁":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["租金", "租价", "月租", "房租", "租金标准", "租费"],
+        "R502",
+        "租赁合同未约定租金或租金标准",
+        "建议明确租金金额、支付方式及支付期限（《民法典》第704条）",
+        "中",
+    )
+
+
+def check_lease_sublease(clauses: list[dict], contract_type: str) -> list[RuleFinding]:
+    """转租约定不明（民法典716条：转租须经出租人同意）"""
+    if contract_type != "租赁":
+        return []
+    full_text = "\n".join(c.get("content", "") for c in clauses)
+    if "转租" in full_text and not re.search(
+        r"转租.{0,15}(?:同意|允许|禁止|不得|需经|须经)", full_text
+    ):
+        return [RuleFinding(
+            "R503", "lease", "中",
+            "约定转租但未明确是否需要出租人同意，根据《民法典》第716条，转租须经出租人同意",
+            suggestion="建议明确约定：转租须经出租人书面同意，未经同意不得转租",
+        )]
+    return []
+
+
+def check_lease_repair(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """修缮义务缺失（民法典712条：出租人应履行维修义务）"""
+    if contract_type != "租赁":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["维修", "修缮", "维护", "保养", "修理"],
+        "R504",
+        "租赁合同未约定租赁物维修/修缮义务",
+        "建议明确租赁物维修义务及费用承担（《民法典》第712条：出租人应履行维修义务）",
+        "低",
+    )
+
+
+def check_lease_deposit(clauses: list[dict], contract_type: str) -> list[RuleFinding]:
+    """押金条款不明（商业惯例，无强制法条）"""
+    if contract_type != "租赁":
+        return []
+    full_text = "\n".join(c.get("content", "") for c in clauses)
+    if re.search(r"押金|保证金", full_text) and not re.search(
+        r"(?:押金|保证金).{0,20}(?:退还|返还|退回|扣除|不予退还)", full_text
+    ):
+        return [RuleFinding(
+            "R505", "lease", "低",
+            "约定押金/保证金但未明确退还条件及扣除情形",
+            suggestion="建议明确押金金额、退还条件、扣除情形及退还期限",
+        )]
+    return []
+
+
+# ── Category H: Sale (买卖合同) ─────────────────────────────
+
+def check_sale_delivery(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """交付地点/期限不明（民法典596条）"""
+    if contract_type != "买卖":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["交付地点", "交货地点", "交付时间", "交货时间", "交付期限", "交货期限", "履行地点", "履行期限"],
+        "R701",
+        "买卖合同未明确交付地点或交付期限",
+        "建议明确标的物交付地点、交付时间及交付方式（《民法典》第596条）",
+        "中",
+    )
+
+
+def check_sale_inspection(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """验收/检验期缺失（民法典620、621条）"""
+    if contract_type != "买卖":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["验收", "检验", "验收标准", "检验期", "异议期", "验收期限"],
+        "R702",
+        "买卖合同未约定验收/检验标准或检验期",
+        "建议约定检验期及异议期（《民法典》第620-621条：买受人应在检验期内检验并通知）",
+        "中",
+    )
+
+
+def check_sale_risk_transfer(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """风险转移约定不明（民法典604条）"""
+    if contract_type != "买卖":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["风险转移", "风险自", "风险承担", "风险由", "交付时风险"],
+        "R703",
+        "买卖合同未约定标的物风险转移时点",
+        "建议明确风险转移时点（《民法典》第604条：交付前后风险承担）",
+        "低",
+    )
+
+
+def check_sale_quality(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """质量条款缺失（民法典596条）"""
+    if contract_type != "买卖":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["质量", "质量标准", "合格", "规格", "技术标准", "技术参数"],
+        "R704",
+        "买卖合同未约定标的物质量标准或技术参数",
+        "建议明确标的物质量标准、验收标准（《民法典》第596条）",
+        "高",
+    )
+
+
+# ── Category I: Service (服务/承揽合同) ─────────────────────
+
+def check_service_deliverable(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """服务成果/交付标准不明（民法典771条）"""
+    if contract_type != "服务":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["交付标准", "成果标准", "成果要求", "交付成果", "工作成果", "交付物", "成果"],
+        "R801",
+        "服务合同未明确交付成果或交付标准",
+        "建议明确服务成果、交付物及质量标准（《民法典》第771条）",
+        "高",
+    )
+
+
+def check_service_ip_ownership(clauses: list[dict], contract_type: str) -> list[RuleFinding]:
+    """知识产权归属不明（民法典845条：技术合同应约定成果归属）"""
+    if contract_type != "服务":
+        return []
+    full_text = "\n".join(c.get("content", "") for c in clauses)
+    has_ip_subject = re.search(
+        r"软件|技术|开发|成果|知识产权|专利|著作权|版权|源代码", full_text
+    )
+    has_ownership = re.search(
+        r"归属|归.{0,8}(?:甲方|乙方|双方|所有)|知识产权.{0,10}(?:属于|归)", full_text
+    )
+    if has_ip_subject and not has_ownership:
+        return [RuleFinding(
+            "R802", "service", "高",
+            "合同涉及技术/开发成果但未约定知识产权归属，根据《民法典》第845条，技术合同应约定成果归属",
+            suggestion="建议明确成果知识产权归属、使用权及收益分配",
+        )]
+    return []
+
+
+def check_service_acceptance(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """验收标准/程序缺失（民法典780条）"""
+    if contract_type != "服务":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["验收标准", "验收程序", "验收方法", "验收方式", "验收期限"],
+        "R803",
+        "服务合同未约定验收标准或验收程序",
+        "建议明确验收标准、验收程序及验收期限（《民法典》第780条）",
+        "中",
+    )
+
+
+def check_service_warranty(clauses: list[dict], contract_type: str) -> RuleFinding | None:
+    """成果瑕疵担保缺失（民法典781条）"""
+    if contract_type != "服务":
+        return None
+    return _check_essential_clause(
+        clauses,
+        ["瑕疵", "质保", "质量保证", "保修", "修理", "重作", "修复"],
+        "R804",
+        "服务合同未约定成果质量保证或瑕疵修复责任",
+        "建议约定成果不符合质量要求时的修理、重作、减少报酬或赔偿（《民法典》第781条）",
+        "中",
+    )
+
+
 # ── Rule registry ────────────────────────────────────────────
 
 # _all rules apply to every contract type
@@ -542,9 +747,17 @@ RULE_REGISTRY: dict[str, list[Callable]] = {
     # Contract-type-specific rules
     "买卖": [
         check_payment_terms,
+        check_sale_delivery,
+        check_sale_inspection,
+        check_sale_risk_transfer,
+        check_sale_quality,
     ],
     "服务": [
         check_payment_terms,
+        check_service_deliverable,
+        check_service_ip_ownership,
+        check_service_acceptance,
+        check_service_warranty,
     ],
     "劳动": [
         check_probation_period,
@@ -554,6 +767,13 @@ RULE_REGISTRY: dict[str, list[Callable]] = {
     ],
     "借款": [
         check_payment_terms,
+    ],
+    "租赁": [
+        check_lease_term_limit,
+        check_lease_rent,
+        check_lease_sublease,
+        check_lease_repair,
+        check_lease_deposit,
     ],
     "保密": [],
     "其他": [],

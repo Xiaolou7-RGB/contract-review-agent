@@ -26,6 +26,9 @@ class TestRouterSetup:
             "/contract/review/{contract_id}",
             "/contract/revision/{revision_id}/accept",
             "/contract/revision/{revision_id}/lawyer-confirm",
+            "/contract/{contract_id}/final-contract",
+            "/contract/{contract_id}/final-contract/download",
+            "/contract/{contract_id}/human-decision",
         }
         assert route_paths == expected, f"Got: {route_paths}"
 

@@ -20,6 +20,20 @@ from backend.agents.contract_review.rule_engine import (
     check_excessive_liquidated_damages,
     check_non_compete_compensation,
     check_social_insurance,
+    check_payment_terms,
+    check_lease_term_limit,
+    check_lease_rent,
+    check_lease_sublease,
+    check_lease_repair,
+    check_lease_deposit,
+    check_sale_delivery,
+    check_sale_inspection,
+    check_sale_risk_transfer,
+    check_sale_quality,
+    check_service_deliverable,
+    check_service_ip_ownership,
+    check_service_acceptance,
+    check_service_warranty,
     rule_check_node,
 )
 
@@ -262,3 +276,106 @@ async def test_rule_check_node_labor_contract():
     # Should detect labor-specific issues
     labor_ids = [f["rule_id"] for f in findings]
     assert "R301" in labor_ids or "R303" in labor_ids or "R304" in labor_ids
+
+
+# ── Payment terms (signature fix regression) ─────────────────
+
+class TestPaymentTerms:
+    def test_accepts_contract_type_arg(self):
+        """回归：check_payment_terms 必须能被 rule_check_node 的 (clauses, contract_type) 调用。"""
+        clauses = [_make_clause(content="乙方交付货物")]
+        result = check_payment_terms(clauses, "买卖")
+        assert result is not None
+        assert result.rule_id == "R008"
+
+
+# ── Category G: Lease ───────────────────────────────────────
+
+class TestLeaseRules:
+    def test_term_over_20(self):
+        clauses = [_make_clause(content="租赁期限为25年")]
+        results = check_lease_term_limit(clauses, "租赁")
+        assert any(r.rule_id == "R501" for r in results)
+
+    def test_term_within_20_ok(self):
+        clauses = [_make_clause(content="租赁期限为10年")]
+        results = check_lease_term_limit(clauses, "租赁")
+        assert results == []
+
+    def test_term_cap_negative_filter(self):
+        clauses = [_make_clause(content="租赁期限不超过25年")]
+        results = check_lease_term_limit(clauses, "租赁")
+        assert results == []
+
+    def test_missing_rent(self):
+        clauses = [_make_clause(content="租赁物为一套房屋")]
+        result = check_lease_rent(clauses, "租赁")
+        assert result is not None
+        assert result.rule_id == "R502"
+
+    def test_sublease_unclear(self):
+        clauses = [_make_clause(content="承租人可以转租")]
+        results = check_lease_sublease(clauses, "租赁")
+        assert any(r.rule_id == "R503" for r in results)
+
+    def test_sublease_with_consent_ok(self):
+        clauses = [_make_clause(content="转租需经出租人书面同意")]
+        results = check_lease_sublease(clauses, "租赁")
+        assert results == []
+
+    def test_missing_repair(self):
+        clauses = [_make_clause(content="租金每月2000元")]
+        result = check_lease_repair(clauses, "租赁")
+        assert result is not None
+        assert result.rule_id == "R504"
+
+    def test_deposit_unclear(self):
+        clauses = [_make_clause(content="押金3000元")]
+        results = check_lease_deposit(clauses, "租赁")
+        assert any(r.rule_id == "R505" for r in results)
+
+    def test_non_lease_skips(self):
+        clauses = [_make_clause(content="租赁期限为25年")]
+        assert check_lease_term_limit(clauses, "买卖") == []
+
+
+# ── Category H: Sale ────────────────────────────────────────
+
+class TestSaleRules:
+    def test_missing_delivery(self):
+        clauses = [_make_clause(content="买方支付货款100万元")]
+        result = check_sale_delivery(clauses, "买卖")
+        assert result is not None
+        assert result.rule_id == "R701"
+
+    def test_missing_quality(self):
+        clauses = [_make_clause(content="买方支付货款100万元")]
+        result = check_sale_quality(clauses, "买卖")
+        assert result is not None
+        assert result.rule_id == "R704"
+
+
+# ── Category I: Service ─────────────────────────────────────
+
+class TestServiceRules:
+    def test_missing_deliverable(self):
+        clauses = [_make_clause(content="乙方提供服务，甲方支付报酬")]
+        result = check_service_deliverable(clauses, "服务")
+        assert result is not None
+        assert result.rule_id == "R801"
+
+    def test_ip_unclear(self):
+        clauses = [_make_clause(content="乙方开发软件系统")]
+        results = check_service_ip_ownership(clauses, "服务")
+        assert any(r.rule_id == "R802" for r in results)
+
+    def test_ip_with_ownership_ok(self):
+        clauses = [_make_clause(content="乙方开发的软件知识产权归甲方所有")]
+        results = check_service_ip_ownership(clauses, "服务")
+        assert results == []
+
+    def test_missing_acceptance(self):
+        clauses = [_make_clause(content="乙方提供服务")]
+        result = check_service_acceptance(clauses, "服务")
+        assert result is not None
+        assert result.rule_id == "R803"

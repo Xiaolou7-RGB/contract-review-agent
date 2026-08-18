@@ -49,6 +49,7 @@ DIMENSION_ROUTING: dict[str, list[str]] = {
     "服务": ["legal", "compliance", "financial", "rights_obligations"],
     "劳动": ["legal", "compliance", "rights_obligations"],
     "借款": ["legal", "financial", "rights_obligations"],
+    "租赁": ["legal", "compliance", "financial", "rights_obligations"],
     "保密": ["legal", "rights_obligations"],
     "其他": ["legal", "compliance", "financial", "rights_obligations"],
 }
