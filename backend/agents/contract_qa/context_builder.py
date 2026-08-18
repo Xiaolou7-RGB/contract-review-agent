@@ -31,6 +31,7 @@ QA_TOKEN_BUDGET = TOKEN_BUDGET  # 8000, shared estimate basis with review pipeli
 MAX_LAW_HITS = 3
 MAX_EVIDENCE_PER_CLAUSE = 2
 LAW_RETRIEVE_THRESHOLD = 0.30  # calibrated reranker threshold (T5)
+LAW_CONFIDENT_THRESHOLD = 0.70  # 二次路由：top≥此值视为强命中(CONFIDENT)，否则 WEAK；初值待 20 题黄金集标定
 
 _LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "无": 0}
 
@@ -367,6 +368,20 @@ def build_citations(law_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return citations
 
 
+# ── Confidence re-routing (T7, 二次路由) ──────────────────────
+# Post-retrieval decision: weak hits must not be cited with the same
+# confidence as strong ones. HyDE retries retrieval when weak (T3); this
+# tiering changes the ANSWER strategy when still weak after retry. EMPTY is
+# handled upstream via law_empty + NO_LAW_NOTE; WEAK adds a hedge note so the
+# LLM softens the claim instead of asserting it as certain.
+def classify_law_confidence(law_hits: list[dict[str, Any]]) -> str:
+    """Route final law hits to CONFIDENT / WEAK / EMPTY by top confidence."""
+    if not law_hits:
+        return "EMPTY"
+    top = max(float(h.get("confidence", 0.0)) for h in law_hits)
+    return "CONFIDENT" if top >= LAW_CONFIDENT_THRESHOLD else "WEAK"
+
+
 # ── Query rewrite (T6 fix, 2026-08-07) ──────────────────────
 # The raw user question often lacks statute-level vocabulary (e.g. it says
 # "违约责任有什么高风险" but never the words "违约金"/"定金"), so sparse
@@ -580,6 +595,7 @@ async def build_qa_context(db: Any, contract_id: int, question: str) -> dict[str
             "law_hits": [],
             "citations": [],
             "law_empty": True,
+            "confidence_tier": "NA",
         }
 
     # T2: split compound questions; each fragment is enriched independently so
@@ -604,6 +620,7 @@ async def build_qa_context(db: Any, contract_id: int, question: str) -> dict[str
         "law_hits": law_hits,
         "citations": build_citations(law_hits),
         "law_empty": not law_hits,
+        "confidence_tier": classify_law_confidence(law_hits),
     }
 
 

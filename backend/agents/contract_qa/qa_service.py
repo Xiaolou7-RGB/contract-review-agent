@@ -59,6 +59,12 @@ NO_LAW_NOTE = (
     "如用户追问法律依据，请如实告知暂未检索到相关条文。"
 )
 
+WEAK_CONFIDENCE_NOTE = (
+    "\n注意：本次检索到的法律依据置信度较低。回答时请弱化肯定语气，"
+    "明确标注「依据较弱，建议结合具体案情并咨询执业律师」；"
+    "不得将低置信依据当作确定结论。"
+)
+
 
 def _build_qa_llm(max_tokens: int = QA_LLM_MAX_TOKENS, temperature: float = QA_TEMPERATURE) -> ChatOpenAI:
     """QA-dedicated LLM instance — do NOT reuse core.llm._cached_llm (Q-1).
@@ -112,6 +118,8 @@ def build_prompt_messages(
         system_text += "\n\n" + meta
     if ctx.get("law_empty"):
         system_text += NO_LAW_NOTE
+    elif ctx.get("confidence_tier") == "WEAK":
+        system_text += WEAK_CONFIDENCE_NOTE
     if summary and summary.strip():
         system_text += "\n\n【历史对话摘要】\n" + summary.strip()
 
