@@ -27,6 +27,19 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token');
   }
 
+  /**
+   * Called when any API returns 401. The current token is invalid
+   * (expired or revoked), so wipe local state and send the user to the
+   * login page. We use location.href rather than router.push to avoid a
+   * pinia ↔ router import cycle and to fully reset in-memory component state.
+   */
+  function handle401() {
+    logout();
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+  }
+
   async function fetchMe() {
     if (!token.value) return;
     try {
@@ -48,5 +61,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { token, user, isLoggedIn, username, role, setAuth, logout, fetchMe };
+  return { token, user, isLoggedIn, username, role, setAuth, logout, handle401, fetchMe };
 });

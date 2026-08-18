@@ -59,6 +59,15 @@
       />
     </el-card>
 
+    <!-- === Paused for Human Review === -->
+    <HumanReviewPanel
+      v-if="phase === 'paused_review'"
+      :items="pausedItems"
+      :contract-id="pausedContractId"
+      :submitting="submittingDecision"
+      @submit="submitHumanDecisions"
+    />
+
     <!-- === Loading Existing Report === -->
     <el-card v-if="phase === 'loading'" class="progress-card" shadow="never">
       <div class="progress-status">
@@ -88,6 +97,9 @@
           </p>
         </div>
         <div class="doc-actions">
+          <el-button type="success" @click="exportFinalContract">
+            <el-icon style="margin-right: 4px"><Download /></el-icon>导出修订后合同
+          </el-button>
           <el-button type="primary" @click="exportReport">
             <el-icon style="margin-right: 4px"><Download /></el-icon>导出报告
           </el-button>
@@ -206,12 +218,37 @@
         <template #header>
           <span>修订建议 ({{ report.revisions.length }} 条)</span>
         </template>
-        <div v-for="rev in report.revisions" :key="rev.id" class="revision-item">
+        <div v-for="rev in report.revisions" :key="rev.id" class="revision-item" :class="{ 'revision-done': rev.status !== 'pending' }">
           <div class="diff-box" v-html="rev.diff_html || '暂无差异'"></div>
           <div class="revision-actions">
-            <el-button size="small" type="success" @click="acceptRevision(rev, 'accepted')">采纳</el-button>
-            <el-button size="small" type="danger" @click="acceptRevision(rev, 'rejected')">驳回</el-button>
-            <el-button size="small" type="warning" @click="acceptRevision(rev, 'needs_lawyer')">需律师确认</el-button>
+            <el-tag
+              v-if="rev.status === 'accepted'"
+              type="success"
+              size="small"
+              class="revision-status-tag"
+            >已采纳</el-tag>
+            <el-tag
+              v-else-if="rev.status === 'rejected'"
+              type="danger"
+              size="small"
+              class="revision-status-tag"
+            >已驳回</el-tag>
+            <el-tag
+              v-else-if="rev.status === 'needs_lawyer'"
+              type="warning"
+              size="small"
+              class="revision-status-tag"
+            >需律师确认</el-tag>
+            <el-tag
+              v-else
+              type="info"
+              size="small"
+              class="revision-status-tag"
+            >待处理</el-tag>
+
+            <el-button size="small" type="success" :disabled="rev.status === 'accepted'" @click="acceptRevision(rev, 'accepted')">采纳</el-button>
+            <el-button size="small" type="danger" :disabled="rev.status === 'rejected'" @click="acceptRevision(rev, 'rejected')">驳回</el-button>
+            <el-button size="small" type="warning" :disabled="rev.status === 'needs_lawyer'" @click="acceptRevision(rev, 'needs_lawyer')">需律师确认</el-button>
           </div>
         </div>
       </el-card>
@@ -252,17 +289,19 @@ import {
   streamProgress,
   getReport,
   acceptRevision as acceptRevisionApi,
+  downloadFinalContract,
   type ReviewReport,
   type Evidence,
 } from '@/api/contract';
 import QaChatPanel from '@/components/QaChatPanel.vue';
+import HumanReviewPanel from '@/components/HumanReviewPanel.vue';
 
 const route = useRoute();
 const router = useRouter();
 
 // ── State ──────────────────────────────────────────────────
 
-type Phase = 'upload' | 'progress' | 'loading' | 'report' | 'error';
+type Phase = 'upload' | 'progress' | 'loading' | 'paused_review' | 'report' | 'error';
 
 const phase = ref<Phase>('upload');
 const selectedFile = ref<File | null>(null);
@@ -272,7 +311,12 @@ const progressMessage = ref('');
 const currentStatus = ref('');
 const report = ref<ReviewReport | null>(null);
 const errorMessage = ref('');
-const qaToken = computed(() => getCookie('token') || 'anonymous');
+const qaToken = computed(() => localStorage.getItem('token') || 'anonymous');
+
+// Human-in-the-Loop state
+const pausedItems = ref<any[]>([]);
+const pausedContractId = ref(0);
+const submittingDecision = ref(false);
 let abortController: AbortController | null = null;
 
 // ── Dimension metadata ─────────────────────────────────────
@@ -381,7 +425,8 @@ const statusLabel = computed(() => {
   const labels: Record<string, string> = {
     'pending': '等待中', 'parsing': '条款拆解中',
     'reviewing': '风险评审中', 'retrieving': '法条检索中',
-    'revising': '修订建议中', 'completed': '已完成', 'failed': '失败',
+    'revising': '修订建议中', 'paused_waiting': '等待人工审批',
+    'completed': '已完成', 'failed': '失败',
   };
   return labels[currentStatus.value] || currentStatus.value || '准备中';
 });
@@ -528,6 +573,95 @@ function resetUpload() {
   selectedFile.value = null;
 }
 
+// ── Human-in-the-Loop helpers ──────────────────────────────
+
+async function loadPausedItems(contractId: number) {
+  try {
+    const data = await getReport(contractId);
+    // Merge rule_findings and high-level review_cards into paused items
+    const cards = (data.review_cards || []).filter(
+      (c: any) => c.level === '高' || c.score > 0.7
+    );
+    const rules = (data.rule_findings || []).filter(
+      (f: any) => f.level === '高'
+    );
+
+    pausedItems.value = [
+      ...cards.map((c: any) => ({
+        id: c.clause_id || c.id,
+        title: c.risk_type || c.dimension || '',
+        level: c.level,
+        score: c.score,
+        description: c.suggestion || '',
+        source: `LLM评审 · ${c.dimension || ''}维度`,
+        type: 'review_card',
+      })),
+      ...rules.map((r: any) => ({
+        id: r.rule_id || r.id,
+        title: r.rule_id || '',
+        level: r.level,
+        score: 1.0,
+        description: r.description || '',
+        source: `规则引擎 · ${r.category || ''}`,
+        type: 'rule_finding',
+      })),
+    ];
+
+    if (pausedItems.value.length > 0) {
+      phase.value = 'paused_review';
+    } else {
+      // No high-risk items after all — continue to report
+      report.value = data;
+      phase.value = 'report';
+    }
+  } catch (err) {
+    console.error('Failed to load paused items:', err);
+    phase.value = 'error';
+    errorMessage.value = '加载待审批项失败';
+  }
+}
+
+async function submitHumanDecisions(decisions: any[]) {
+  if (!pausedContractId.value) return;
+  submittingDecision.value = true;
+  try {
+    const token = localStorage.getItem('token') || 'anonymous';
+    const resp = await fetch(
+      `/api/v1/contract/${pausedContractId.value}/human-decision`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ decisions }),
+      }
+    );
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || '提交审批结果失败');
+    }
+
+    // Reload the completed report
+    phase.value = 'progress';
+    progressMessage.value = '正在完成审查...';
+    progressPercent.value = 90;
+
+    report.value = await getReport(pausedContractId.value);
+    phase.value = 'report';
+    currentStatus.value = 'completed';
+    progressPercent.value = 100;
+    progressMessage.value = '审查完成！';
+
+    router.replace(`/contract?review=${pausedContractId.value}`);
+  } catch (err: any) {
+    console.error('Submit decisions error:', err);
+    ElMessage.error(err.message || '提交审批失败');
+  } finally {
+    submittingDecision.value = false;
+  }
+}
+
 async function startReview() {
   if (!selectedFile.value) return;
 
@@ -548,12 +682,23 @@ async function startReview() {
     progressPercent.value = 15;
 
     abortController = new AbortController();
-    const token = getCookie('token') || 'anonymous';
+    const token = localStorage.getItem('token') || 'anonymous';
 
     await streamProgress(
       contractId,
       token,
-      (status) => applyStage(status),
+      (status) => {
+        if (status === 'paused_waiting') {
+          // Switch to paused review phase — load report for review items
+          stopDrift();
+          pausedContractId.value = contractId;
+          currentStatus.value = 'paused_waiting';
+          progressMessage.value = '检测到高风险项，需要人工审批';
+          loadPausedItems(contractId);
+          return;
+        }
+        applyStage(status);
+      },
       abortController.signal
     );
 
@@ -579,6 +724,31 @@ async function startReview() {
 
 function exportReport() {
   window.print();
+}
+
+async function exportFinalContract() {
+  if (!report.value) return;
+  const contractId = report.value.contract_id;
+
+  // 前端先校验：还有未决策的修订则提示，不请求后端
+  const pending = (report.value.revisions || []).filter(
+    (r) => r.status === 'pending'
+  ).length;
+  if (pending > 0) {
+    ElMessage.warning(`还有 ${pending} 条修订未决策，请先全部决策后再导出`);
+    return;
+  }
+
+  try {
+    const result = await downloadFinalContract(contractId);
+    if (result.ok) {
+      ElMessage.success('已导出修订后合同');
+    } else {
+      ElMessage.error(result.message || '导出失败');
+    }
+  } catch (err: any) {
+    ElMessage.error(err.message || '导出失败');
+  }
 }
 
 // ── Report helpers ─────────────────────────────────────────
@@ -767,8 +937,10 @@ function getCookie(name: string): string | null {
 /* ── Revisions ── */
 .revisions-card { margin-bottom: 14px; }
 .revision-item { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid var(--el-border-color-lighter); }
+.revision-item.revision-done { opacity: 0.72; }
 .diff-box { font-size: 0.9rem; line-height: 1.7; padding: 0.75rem; background: #fafaf8; border-radius: 6px; margin-bottom: 0.5rem; }
-.revision-actions { display: flex; gap: 0.5rem; }
+.revision-actions { display: flex; align-items: center; gap: 0.5rem; }
+.revision-status-tag { flex-shrink: 0; }
 
 /* ── Disclaimer ── */
 .disclaimer-card { margin-bottom: 14px; }

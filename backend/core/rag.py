@@ -3,8 +3,8 @@ RAG abstraction layer — hybrid search (BGE-M3 dense + sparse) with BGE-Reranke
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
 import threading
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -24,14 +24,7 @@ from pymilvus import (
 
 logger = logging.getLogger(__name__)
 
-# Host/port from environment
-MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
-MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
-
-# ── Local model paths ───────────────────────────────────────
-
-BGE_M3_PATH = "D:/contract/models/embedding/bge-m3"
-BGE_RERANKER_PATH = "D:/contract/models/reranker/bge-reranker-v2-m3"
+from backend.config import get_settings
 
 # ── Lazy model singletons (thread-safe) ─────────────────────
 
@@ -46,9 +39,10 @@ def _get_embedding_model() -> Any:
     if _embedding_model is None:
         with _model_lock:
             if _embedding_model is None:
-                logger.info(f"Loading BGE-M3 from {BGE_M3_PATH} ...")
+                path = get_settings().bge_m3_model_path
+                logger.info(f"Loading BGE-M3 from {path} ...")
                 from FlagEmbedding import BGEM3FlagModel
-                _embedding_model = BGEM3FlagModel(BGE_M3_PATH, use_fp16=False)
+                _embedding_model = BGEM3FlagModel(path, use_fp16=False)
                 logger.info("BGE-M3 loaded")
     return _embedding_model
 
@@ -59,11 +53,31 @@ def _get_reranker_model() -> Any:
     if _reranker_model is None:
         with _model_lock:
             if _reranker_model is None:
-                logger.info(f"Loading BGE-Reranker-v2-M3 from {BGE_RERANKER_PATH} ...")
+                path = get_settings().bge_reranker_model_path
+                logger.info(f"Loading BGE-Reranker-v2-M3 from {path} ...")
                 from FlagEmbedding import FlagReranker
-                _reranker_model = FlagReranker(BGE_RERANKER_PATH, use_fp16=False)
+                _reranker_model = FlagReranker(path, use_fp16=False)
                 logger.info("BGE-Reranker-v2-M3 loaded")
     return _reranker_model
+
+
+async def warmup_models_async() -> None:
+    """并行预热本地模型（embedding + reranker），供 lifespan 启动时调用。
+
+    单个模型加载失败不阻断启动——降级为首个请求时再 lazy-load。
+    """
+
+    async def _safe(name: str, loader: Callable[[], Any]) -> None:
+        try:
+            await asyncio.to_thread(loader)
+            logger.info(f"{name} warmed up")
+        except Exception:
+            logger.exception(f"{name} warmup failed, will lazy-load on first request")
+
+    await asyncio.gather(
+        _safe("BGE-M3", _get_embedding_model),
+        _safe("BGE-Reranker", _get_reranker_model),
+    )
 
 
 # ── Collection schema definitions ───────────────────────────
@@ -163,9 +177,10 @@ COLLECTION_REGISTRY: dict[str, dict[str, Any]] = {
 class KnowledgeBaseClient:
     """Knowledge base client with BGE-M3 hybrid search + BGE-Reranker."""
 
-    def __init__(self, host: str = MILVUS_HOST, port: int = MILVUS_PORT):
-        self._host = host
-        self._port = port
+    def __init__(self, host: str | None = None, port: int | None = None):
+        settings = get_settings()
+        self._host = host or settings.milvus_host
+        self._port = port or settings.milvus_port
         self._connected = False
 
     def connect(self) -> None:
@@ -186,8 +201,26 @@ class KnowledgeBaseClient:
                 continue
             schema = cfg["schema_fn"]()
             _create_collection(client, name, schema)
+            # 为 embedding 字段建索引（否则后续 load/search 报 index not found）
+            self._ensure_embedding_index(name)
             created.append(name)
         return created
+
+    def _ensure_embedding_index(self, name: str) -> None:
+        """Ensure an IVF_FLAT index exists on the dense embedding field."""
+        from pymilvus import Collection
+
+        try:
+            col = Collection(name)
+            if col.has_index():
+                return
+            col.create_index(
+                "embedding",
+                {"index_type": "IVF_FLAT", "metric_type": "IP", "params": {"nlist": 32}},
+            )
+            logger.info(f"Created embedding index for '{name}'")
+        except Exception as e:  # non-fatal: collection may be empty / already indexed
+            logger.warning(f"Failed to ensure index for '{name}': {e}")
 
     def list_collections(self) -> list[str]:
         self.connect()
@@ -305,13 +338,13 @@ class KnowledgeBaseClient:
             if source_id in seen:
                 continue
             seen.add(source_id)
-            hits.append({
-                "id": source_id,
-                "content": entity.get("text") or entity.get("content", ""),
-                "article_no": entity.get("article_no", ""),
-                "chapter": entity.get("chapter", ""),
-                "hybrid_score": round(float(hit.get("distance", 0.0)), 4),
-            })
+            # 透传所有自定义字段（clause_type/template_name/law_name/case_name…），
+            # 否则 kb_template/kb_law/kb_case 的元数据会在返回时丢失。
+            item = dict(entity)
+            item["id"] = source_id
+            item["content"] = entity.get("text") or entity.get("content", "")
+            item["hybrid_score"] = round(float(hit.get("distance", 0.0)), 4)
+            hits.append(item)
 
         # Candidate pool for the reranker (widened by T6 fix: was max(rerank_top_k*2, 6))
         candidates = hits[:RERANK_POOL]
@@ -334,15 +367,9 @@ class KnowledgeBaseClient:
         # ── Step 5: final top_k + threshold ──
         out: list[dict[str, Any]] = []
         for h in candidates[:rerank_top_k]:
-            item = {
-                "id": h["id"],
-                "content": h["content"],
-                "article_no": h.get("article_no", ""),
-                "chapter": h.get("chapter", ""),
-                "confidence": h["rerank_score"],
-                "hybrid_score": h.get("hybrid_score", 0.0),
-                "rerank_score": h["rerank_score"],
-            }
+            item = dict(h)  # 保留透传的自定义字段（clause_type/template_name/law_name…）
+            item["confidence"] = h["rerank_score"]
+            item["rerank_score"] = h["rerank_score"]
             if item["confidence"] < threshold:
                 item["is_human_review"] = True
             out.append(item)

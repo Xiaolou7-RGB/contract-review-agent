@@ -5,6 +5,7 @@ and TypedDict for LangGraph state.
 """
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any, Optional, TypedDict
 from pydantic import BaseModel, Field
 
@@ -60,7 +61,7 @@ class Revision(BaseModel):
 # ── LangGraph state TypedDict ───────────────────────────────
 
 class ContractReviewState(TypedDict, total=False):
-    """State carried through the 4-node pipeline."""
+    """State carried through the 6-node pipeline (parse → rule_check → review → retrieve → human_gate → revise)."""
     # Input
     contract_id: int
     user_id: int
@@ -70,12 +71,24 @@ class ContractReviewState(TypedDict, total=False):
     # Node ①
     clauses: list[dict[str, Any]]
 
+    # Node ①.5 (rule engine — Layer 1)
+    rule_findings: list[dict[str, Any]]  # deterministic rule check results
+
     # Node ②
     review_cards: list[dict[str, Any]]
     degraded_review: bool
+    # Node ② fan-out (LangGraph Send API — true graph-level parallelism)
+    dimension_key: str                                       # which dimension a Send branch reviews
+    dimension_cards: Annotated[list[dict[str, Any]], operator.add]  # reducer-merged per-dimension cards
 
     # Node ③
     evidence_map: dict[str, list[dict[str, Any]]]  # clause_id → [Evidence...]
+
+    # Human-in-the-Loop gate (between retrieve and revise)
+    needs_human_review: bool
+    human_review_items: list[dict[str, Any]]
+    human_review_status: str  # pending / skipped / completed
+    human_review_decisions: list[dict[str, Any]]
 
     # Node ④
     revisions: list[dict[str, Any]]

@@ -42,3 +42,6 @@ frontend/dist/
 # Local model weights & user uploads (large / private)
 models/
 uploads/
+
+# Deploy runtime data (Milvus / Postgres volumes)
+deploy/volumes/

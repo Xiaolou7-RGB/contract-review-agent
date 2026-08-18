@@ -1,0 +1,6 @@
+# 嵌入式 etcd 配置（Milvus 单容器模式）
+listen-client-urls: http://0.0.0.0:2379
+advertise-client-urls: http://0.0.0.0:2379
+quota-backend-bytes: 4294967296
+auto-compaction-mode: revision
+auto-compaction-retention: '1000'

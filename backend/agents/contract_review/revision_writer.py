@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 
 class _RevEntry(BaseModel):
-    clause_id: str = Field(...)
+    clause_id: str = Field(default="")  # 不再信任 LLM 填的 clause_id；落库时用真实 clause_id
     before_text: str = Field(default="")
     after_text: str = Field(default="")
     revision_rationale: str = Field(default="")
@@ -72,9 +72,26 @@ def _build_revision_prompt(
         f"- [{c.get('dimension', '')}] {c.get('level', '')}风险: {c.get('suggestion', '')}"
         for c in cards
     )
+    # 按知识库分组，每个库取置信度最高的一条，确保示范条款/裁判规则/法条都能进参考
+    _EVIDENCE_LABEL = {
+        "pkulaw_case": "真实判例",
+        "kb_template": "示范条款",
+        "kb_case": "裁判规则",
+        "kb_law": "司法解释",
+        "civil_code_hybrid": "民法典法条",
+    }
+    _EVIDENCE_ORDER = ["pkulaw_case", "kb_template", "kb_case", "kb_law", "civil_code_hybrid"]
+    by_col: dict[str, dict[str, Any]] = {}
+    for e in evidence:
+        col = e.get("source_collection", "")
+        if col not in by_col or e.get("confidence", 0) > by_col[col].get("confidence", 0):
+            by_col[col] = e
+    picked = [by_col[c] for c in _EVIDENCE_ORDER if c in by_col]
+    if not picked:
+        picked = sorted(evidence, key=lambda e: -e.get("confidence", 0))[:3]
     evidence_text = "\n".join(
-        f"- [{e.get('source_collection', '')}] {e.get('quote', '')[:200]}"
-        for e in evidence[:3]
+        f"- [{_EVIDENCE_LABEL.get(e.get('source_collection', ''), '参考')}] {e.get('quote', '')[:200]}"
+        for e in picked[:4]
     )
 
     return f"""你是一位合同审查专家和律师。请根据审查意见和法律依据，为以下合同条款起草修订版本。
@@ -119,7 +136,10 @@ async def _revise_single_clause(
             evidence_ids = [e.get("source_id", "") for e in evidence if e.get("source_id")]
             diff_html = generate_diff_html(entry.before_text, entry.after_text)
             return {
-                "clause_id": entry.clause_id,
+                # 用传入 clause 的真实 clause_id（hash），保证 revision 能关联回原条款。
+                # LLM 填的 entry.clause_id 是语义描述（如"第二条"），与 clause 的 hash id 对不上，
+                # 会导致后续"回写原文/生成新合同"时无法定位条款。
+                "clause_id": clause.get("clause_id", ""),
                 "before_text": entry.before_text,
                 "after_text": entry.after_text,
                 "diff_html": diff_html,

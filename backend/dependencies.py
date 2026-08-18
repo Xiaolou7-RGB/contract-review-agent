@@ -4,18 +4,20 @@ Dependency injection — JWT auth and role-based access control.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
+from backend.config import get_settings
+
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+_settings = get_settings()
+JWT_SECRET = _settings.jwt_secret
+JWT_ALGORITHM = _settings.jwt_algorithm
+JWT_EXPIRE_MINUTES = _settings.jwt_expire_minutes
 
 security = HTTPBearer(auto_error=False)
 

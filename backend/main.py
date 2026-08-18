@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import logging
+from contextlib import asynccontextmanager
 
 # HF_ENDPOINT must be set before any HuggingFace imports (K-7)
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -17,28 +18,36 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.config import get_settings
+from backend.core.logger import configure_logging
+
+_settings = get_settings()
+
 # Create logs directory
 os.makedirs("logs", exist_ok=True)
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO")),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(
-            os.getenv("LOG_FILE", "logs/contract_review.log"),
-            encoding="utf-8",
-        ) if os.getenv("LOG_FILE") else logging.NullHandler(),
-    ],
-)
+# Configure logging (结构化日志 + 压低第三方噪音)
+configure_logging()
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时并行预热本地模型（embedding + reranker），避免首个请求卡顿。
+
+    单个模型加载失败不阻断启动（warmup 内部已降级为首次请求 lazy-load）。
+    """
+    from backend.core.rag import warmup_models_async
+    await warmup_models_async()
+    yield
+
 
 app = FastAPI(
     title="Contract Review Assistant",
     description="AI-powered contract review with RAG and HITL",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS
@@ -71,7 +80,7 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.getenv("SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("SERVER_PORT", "8801"))
+    host = _settings.server_host
+    port = _settings.server_port
     logger.info(f"Starting server on {host}:{port}")
     uvicorn.run("backend.main:app", host=host, port=port, reload=True)

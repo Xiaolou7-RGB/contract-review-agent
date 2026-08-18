@@ -81,6 +81,7 @@ class TestDirectPipelineProgressCallback:
             return stub
 
         monkeypatch.setattr(g, "clause_parser_node", make("parse"))
+        monkeypatch.setattr(g, "rule_check_node", make("rule_check"))
         monkeypatch.setattr(g, "multi_dim_review_node", make("review"))
         monkeypatch.setattr(g, "rag_retriever_node", make("retrieve"))
         monkeypatch.setattr(g, "revision_writer_node", make("revise"))
@@ -98,6 +99,7 @@ class TestDirectPipelineProgressCallback:
         asyncio.run(run_contract_review_direct(1, 1, "合同文本", progress_callback=cb))
         assert events == [
             ("parse", "started"), ("parse", "completed"),
+            ("rule_check", "started"), ("rule_check", "completed"),
             ("review", "started"), ("review", "completed"),
             ("retrieve", "started"), ("retrieve", "completed"),
             ("revise", "started"), ("revise", "completed"),
@@ -114,7 +116,7 @@ class TestDirectPipelineProgressCallback:
 
         import asyncio
         asyncio.run(run_contract_review_direct(1, 1, "合同文本", progress_callback=cb))
-        assert len(events) == 8
+        assert len(events) == 10
 
     def test_node_failure_fires_failed_and_propagates(self, monkeypatch):
         from backend.agents.contract_review.graph import run_contract_review_direct

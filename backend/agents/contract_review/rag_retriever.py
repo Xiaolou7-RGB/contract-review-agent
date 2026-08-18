@@ -12,43 +12,50 @@ from typing import Any
 from backend.agents.contract_review.schemas import ContractReviewState
 from backend.agents.contract_review.degradation import with_degradation
 from backend.core.rag import get_kb_client
+from backend.mcp.pkulaw_client import search_cases
 
 logger = logging.getLogger(__name__)
 
 # ── Risk-type → Collection routing ─────────────────────────
-# Currently all routed to civil_code_hybrid (dense+sparse BGE-M3 collection).
-# When kb_case/kb_template corpora are ready, restore per-type routing.
+# civil_code_hybrid: 民法典 1260 条（dense+sparse 混合检索，主用）
+# kb_law: 司法解释 / 劳动合同法 / 个人信息保护法 / 数据安全法（dense-only）
+# kb_case: 高频争议点裁判规则（dense-only）
+# kb_template: 官方合同示范文本的安全条款（dense-only，供修订参考）
+# 所有风险统一同时检索这四个库。
 
 _COLLECTION = "civil_code_hybrid"
+_LAW = "kb_law"
+_CASE = "kb_case"
+_TEMPLATE = "kb_template"
 
 RISK_TO_COLLECTION: dict[str, list[str]] = {
-    "合同无效风险": [_COLLECTION],
-    "违约风险": [_COLLECTION],
-    "赔偿条款失衡": [_COLLECTION],
-    "争议解决不利": [_COLLECTION],
-    "知识产权归属不明": [_COLLECTION],
-    "保密义务过宽": [_COLLECTION],
-    "竞业限制无效": [_COLLECTION],
-    "财务风险": [_COLLECTION],
-    "价格条款不明": [_COLLECTION],
-    "付款条件不合理": [_COLLECTION],
-    "担保无效": [_COLLECTION],
-    "合规风险": [_COLLECTION],
-    "数据保护合规": [_COLLECTION],
-    "劳动合规风险": [_COLLECTION],
-    "权责不对等": [_COLLECTION],
-    "免责条款过宽": [_COLLECTION],
+    "合同无效风险": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "违约风险": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "赔偿条款失衡": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "争议解决不利": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "知识产权归属不明": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "保密义务过宽": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "竞业限制无效": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "财务风险": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "价格条款不明": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "付款条件不合理": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "担保无效": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "合规风险": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "数据保护合规": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "劳动合规风险": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "权责不对等": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "免责条款过宽": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
 }
 
 # Dimension-based routing for unmatched risk types
 DIM_TO_COLLECTION: dict[str, list[str]] = {
-    "legal": [_COLLECTION],
-    "compliance": [_COLLECTION],
-    "financial": [_COLLECTION],
-    "rights_obligations": [_COLLECTION],
+    "legal": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "compliance": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "financial": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
+    "rights_obligations": [_COLLECTION, _LAW, _CASE, _TEMPLATE],
 }
 
-DEFAULT_COLLECTIONS = [_COLLECTION]
+DEFAULT_COLLECTIONS = [_COLLECTION, _LAW, _CASE, _TEMPLATE]
 
 
 def _route_collections(risk_type: str, dimension: str) -> list[str]:
@@ -275,13 +282,23 @@ def _build_evidence(
 # ── Search query builder ────────────────────────────────────
 
 def _build_search_query(card: dict[str, Any], clause: dict[str, Any]) -> str:
-    """Build a search query from a risk card and its clause."""
-    parts = []
-    if clause.get("title"):
-        parts.append(clause["title"])
-    parts.append(card.get("risk_type", ""))
-    parts.append(card.get("suggestion", ""))
-    return " ".join(parts)[:512]
+    """Build a search query from a risk card and its clause.
+
+    Prefer the LLM-generated ``search_query`` (a concise 10-30 char risk phrase).
+    Long queries dilute the cross-encoder reranker: a 512-char title+risk_type
+    +suggestion blob makes BGE-Reranker scores collapse to ~0.01 even for the
+    correct article, whereas a short focused query scores ~0.99.
+    """
+    # 1. LLM-generated concise query (best)
+    q = (card.get("search_query") or "").strip()
+    if q:
+        return q
+    # 2. Fallback: the risk description (suggestion) — more focused than title
+    suggestion = (card.get("suggestion") or "").strip()
+    if suggestion:
+        return suggestion[:128]
+    # 3. Last resort: risk type
+    return (card.get("risk_type") or "").strip()
 
 
 # ── Main retrieval function ─────────────────────────────────
@@ -328,21 +345,25 @@ async def retrieve_evidence(
                 for r in results:
                     r["source_collection"] = col
 
-                # Context expansion: ±2 adjacent articles + cross-references
-                try:
-                    expanded = await _build_expanded_context(
-                        results, kb_client, expansion_cache, col
-                    )
-                    for e in expanded:
-                        e["source_collection"] = col
-                    if expanded:
-                        logger.info(
-                            f"Context expansion added {len(expanded)} articles "
-                            f"for clause={clause_id} from {col}"
+                # Context expansion: ±2 adjacent articles + cross-references.
+                # Only for civil_code_hybrid (single statute, article_no globally
+                # unique & contiguous). kb_law holds multiple laws each starting
+                # from 第一条, so ±2 adjacent lookup would cross laws.
+                if col == _COLLECTION:
+                    try:
+                        expanded = await _build_expanded_context(
+                            results, kb_client, expansion_cache, col
                         )
-                        results = results + expanded
-                except Exception as e:
-                    logger.warning(f"Context expansion failed for {col}: {e}")
+                        for e in expanded:
+                            e["source_collection"] = col
+                        if expanded:
+                            logger.info(
+                                f"Context expansion added {len(expanded)} articles "
+                                f"for clause={clause_id} from {col}"
+                            )
+                            results = results + expanded
+                    except Exception as e:
+                        logger.warning(f"Context expansion failed for {col}: {e}")
 
                 evidence = _build_evidence(clause_id, results)
                 for ev in evidence:
@@ -366,6 +387,29 @@ async def retrieve_evidence(
                     "is_human_review": True,
                     "href": "",
                 })
+
+        # ── 北大法宝 MCP：高风险条款补真实判例（在线增强，失败降级）──
+        # 只对「高」风险条款调 MCP，控制额度消耗，且形成「离线库兜底 + 在线增强」架构。
+        if card.get("level") == "高":
+            cases = await search_cases(query)
+            for c in cases:
+                quote = f"{c['title']}（{c['case_no']}）{c['court']} {c['date']}"
+                if c.get("case_gist"):
+                    quote += f" 裁判要旨：{c['case_gist'][:120]}"
+                all_evidence.append({
+                    "clause_id": clause_id,
+                    "source_id": c["case_no"] or c["title"],
+                    "source_collection": "pkulaw_case",
+                    "quote": quote,
+                    "relevance": "真实判例",
+                    "confidence": 0.6,
+                    "is_human_review": False,
+                    "href": "",
+                })
+            if cases:
+                logger.info(
+                    f"北大法宝补 {len(cases)} 条真实案例 for clause={clause_id} risk={risk_type}"
+                )
 
     logger.info(f"RAG retrieval complete: {len(all_evidence)} evidence records")
     return all_evidence

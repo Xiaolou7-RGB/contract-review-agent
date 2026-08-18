@@ -23,13 +23,14 @@ from pydantic import BaseModel, Field
 
 from backend.agents.contract_qa.qa_service import stream_answer
 from backend.api.v1.contract import _sse_event  # reuse SSE frame formatting
+from backend.config import get_settings
 from backend.dependencies import decode_token, get_optional_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contract/qa", tags=["contract-qa"])
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres123@localhost:15432/eduagent")
+DATABASE_URL = get_settings().database_url
 
 
 async def _get_db() -> asyncpg.Connection:

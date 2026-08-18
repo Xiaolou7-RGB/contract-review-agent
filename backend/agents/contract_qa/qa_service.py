@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -26,6 +25,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_openai import ChatOpenAI
 
 from backend.agents.contract_qa.context_builder import build_qa_context, render_context
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,11 @@ def _build_qa_llm(max_tokens: int = QA_LLM_MAX_TOKENS, temperature: float = QA_T
     may override for retrieval-auxiliary calls (the T3 HyDE hypothesis uses
     0.0 so the same question always produces the same hypothesis).
     """
+    settings = get_settings()
     return ChatOpenAI(
-        base_url=os.getenv("LLM_API_BASE", "http://localhost:11434/v1"),
-        api_key=os.getenv("LLM_API_KEY", ""),
-        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        base_url=settings.llm_api_base,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -246,9 +247,7 @@ async def stream_answer(message_id: int, question: str) -> AsyncIterator[dict[st
     """
     import asyncpg
 
-    db_url = os.getenv(
-        "DATABASE_URL", "postgresql://postgres:postgres123@localhost:15432/eduagent"
-    )
+    db_url = get_settings().database_url
     db = await asyncpg.connect(db_url)
     try:
         # ── Locate message → session → contract (ownership re-checked by caller) ──

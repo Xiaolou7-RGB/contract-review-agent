@@ -65,9 +65,9 @@ class TestSelfSignupModel:
         from pydantic import ValidationError
         from backend.api.v1.auth import RegisterRequest
         with pytest.raises(ValidationError):
-            RegisterRequest(username="abc", password="123456", role="admin")
+            RegisterRequest(username="abc", email="a@b.com", password="123456", role="admin")
 
     def test_register_request_accepts_minimal_payload(self):
         from backend.api.v1.auth import RegisterRequest
-        req = RegisterRequest(username="abc", password="123456")
-        assert req.username == "abc" and req.password == "123456"
+        req = RegisterRequest(username="abc", email="a@b.com", password="123456")
+        assert req.username == "abc" and req.email == "a@b.com" and req.password == "123456"

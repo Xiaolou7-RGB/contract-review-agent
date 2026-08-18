@@ -1,0 +1,57 @@
+# 合同审查助手 —— 基础设施一键部署（PostgreSQL + Milvus）
+#
+# 启动：docker compose up -d
+# 停止：docker compose down
+# 数据持久化在 ./volumes/ 下（postgres / milvus 各自一个子目录）
+#
+# 端口约定：
+#   PostgreSQL  15433 -> 5432（database=contract，与 eduagent 的 15432 完全隔离）
+#   Milvus      19530（gRPC）+ 9091（管理 HTTP）
+
+services:
+  postgres:
+    container_name: contract-postgres
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: contract
+    ports:
+      - "15433:5432"
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d contract"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  milvus:
+    container_name: contract-milvus
+    image: milvusdb/milvus:v2.4.4
+    command: ["milvus", "run", "standalone"]
+    # Milvus 需要部分系统调用，Windows Docker 上必须关闭 seccomp
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      # 嵌入式 etcd（不再依赖外部 etcd 容器）
+      - ETCD_USE_EMBED=true
+      - ETCD_DATA_DIR=/var/lib/milvus/etcd
+      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
+      # 本地存储（不再依赖 minio 容器）
+      - COMMON_STORAGETYPE=local
+    volumes:
+      - ./volumes/milvus:/var/lib/milvus
+      - ./embedEtcd.yaml:/milvus/configs/embedEtcd.yaml
+      - ./user.yaml:/milvus/configs/user.yaml
+    ports:
+      - "19530:19530"   # gRPC（项目 backend 连接此端口）
+      - "9091:9091"     # 管理 HTTP（健康检查）
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped

@@ -50,7 +50,7 @@ eval_data/         # 评测黄金集（模拟合同 + 评分指南）
 
 ### 1. 依赖服务
 
-需要 PostgreSQL（本项目使用 15432 端口）与 Milvus（19530 端口），可用 Docker 启动。
+需要 PostgreSQL（本项目使用 15433 端口，database=contract）与 Milvus（19530 端口），可用 `deploy/docker-compose.yml` 一键启动。
 
 ### 2. 后端
 
@@ -86,3 +86,35 @@ npm run dev    # http://localhost:5173，/api 自动代理到 8801
 - **T3 HyDE**：首轮最高分 < 0.80 时，由 LLM 生成假设法条文本二次检索，与首轮结果按置信度全局合并；LLM 失败/超时自动降级，不影响主流程
 
 评测结果：口语化问题 recall@3 从 50% 提升至 75%，整体 recall 81% → 88%，详见 `outputs/` 中评测报告。
+
+## MCP 接入（北大法宝真实判例）
+
+审查流水线在离线 RAG 检索之上，额外接入**北大法宝 MCP**，为「高」风险条款补充带**真实案号**的司法判例，对抗 LLM 编造案例的幻觉。
+
+### 为什么接
+
+- 本地 `kb_case` 判例库是 LLM 提炼的「裁判规则」（无真实案号）；北大法宝提供 **1.7 亿+ 真实司法案例**，补齐"有案可依"的真实性短板
+- 在 Agent 流水线中真实落地 MCP 协议，形成「离线 RAG + 在线 MCP」混合检索架构
+
+### 接入条件
+
+- 注册 `https://mcp.pkulaw.com` → 控制台创建应用 → 领取 **900 次免费试用**（30 天有效）→ 获取 Access Token
+- 案例检索服务：`https://apim-gateway.pkulaw.com/mcp-case`（Streamable HTTP + SSE 流式）
+- 工具：`get_case_list(fulltext=...)` → 返回前 20 条真实案例（含案号/法院/日期/裁判要旨）
+
+### 配置
+
+在 `.env.local` 中追加（Token 不入库，`.env.local` 已在 .gitignore）：
+
+```
+PKULAW_TOKEN=<你的 Access Token>
+PKULAW_CASE_URL=https://apim-gateway.pkulaw.com/mcp-case
+```
+
+### 架构：离线兜底 + 在线增强
+
+- **仅 `level == "高"` 的风险条款才调 MCP**——控制额度消耗，中低风险走本地 `kb_case` 秒回
+- **MCP 失败/超时静默降级**：`search_cases` 返回空列表，审查流水线照常走本地知识库，绝不中断
+- 证据链（修订建议的参考）：真实判例(pkulaw) → 示范条款(kb_template) → 裁判规则(kb_case) → 司法解释(kb_law) → 民法典(civil_code_hybrid)
+
+相关代码：`backend/core/pkulaw_client.py`（MCP 客户端）、`backend/agents/contract_review/rag_retriever.py`（高风险触发 + 降级）、`revision_writer.py`（证据分组展示）。

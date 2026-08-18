@@ -4,7 +4,8 @@ asyncpg does not support multi-statement SQL, so we split and run one by one.
 """
 import logging
 import asyncpg
-import os
+
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,16 @@ MIGRATIONS: list[dict] = [
         "version": "003",
         "name": "qa_session_summary",
         "description": "Add summary + summarized_until columns to contract_qa_sessions for rolling conversation summaries",
+    },
+    {
+        "version": "004",
+        "name": "rule_engine_and_hitl",
+        "description": "Add rule engine findings table, human review decisions table, and HITL fields to contract_reviews",
+    },
+    {
+        "version": "005",
+        "name": "users_email_active_and_updated_at_trigger",
+        "description": "Add email/is_active to users + auto-update updated_at triggers",
     },
 ]
 
@@ -165,6 +176,73 @@ SQL_STATEMENTS = [
     # replays ALL statements for every pending version.
     "ALTER TABLE contract_qa_sessions ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE contract_qa_sessions ADD COLUMN IF NOT EXISTS summarized_until INTEGER NOT NULL DEFAULT 0",
+    # ── Migration 004: Rule engine + HITL ──
+    # Rule engine findings table
+    """
+    CREATE TABLE IF NOT EXISTS rule_findings (
+        id              SERIAL PRIMARY KEY,
+        review_id       INTEGER NOT NULL REFERENCES contract_reviews(id) ON DELETE CASCADE,
+        rule_id         VARCHAR(20) NOT NULL,
+        category        VARCHAR(30) NOT NULL,
+        level           VARCHAR(10) NOT NULL,
+        description     TEXT NOT NULL,
+        related_clause_ids JSONB DEFAULT '[]',
+        suggestion      TEXT DEFAULT '',
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    # Human review decisions table
+    """
+    CREATE TABLE IF NOT EXISTS human_review_decisions (
+        id              SERIAL PRIMARY KEY,
+        review_id       INTEGER NOT NULL REFERENCES contract_reviews(id) ON DELETE CASCADE,
+        clause_id       VARCHAR(128) NOT NULL,
+        action          VARCHAR(20) NOT NULL,
+        modified_level  VARCHAR(10),
+        modified_score  FLOAT,
+        comment         TEXT DEFAULT '',
+        skip_revision   BOOLEAN DEFAULT FALSE,
+        decided_by      INTEGER REFERENCES users(id),
+        decided_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    # HITL columns on contract_reviews
+    "ALTER TABLE contract_reviews ADD COLUMN IF NOT EXISTS needs_human_review BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE contract_reviews ADD COLUMN IF NOT EXISTS human_review_status VARCHAR(20) DEFAULT 'skipped'",
+    # Update CHECK constraint to include paused_waiting status
+    """
+    DO $$
+    BEGIN
+        ALTER TABLE contract_reviews DROP CONSTRAINT IF EXISTS contract_reviews_status_check;
+        ALTER TABLE contract_reviews ADD CONSTRAINT contract_reviews_status_check
+            CHECK (status IN ('pending','parsing','reviewing','retrieving','revising','paused_waiting','completed','failed'));
+    EXCEPTION WHEN undefined_object THEN
+        -- constraint might not exist yet; the CREATE TABLE IF NOT EXISTS will set it
+        NULL;
+    END $$;
+    """,
+    # ── Migration 005: users email/is_active + updated_at triggers ──
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(128)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+    # updated_at 自动维护触发器函数（BEFORE UPDATE 时置 updated_at=NOW()）
+    """
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    # 触发器：DROP IF EXISTS + CREATE，保证重放幂等
+    "DROP TRIGGER IF EXISTS trg_users_updated_at ON users",
+    "CREATE TRIGGER trg_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+    "DROP TRIGGER IF EXISTS trg_contract_reviews_updated_at ON contract_reviews",
+    "CREATE TRIGGER trg_contract_reviews_updated_at BEFORE UPDATE ON contract_reviews FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+    "DROP TRIGGER IF EXISTS trg_revision_accepts_updated_at ON revision_accepts",
+    "CREATE TRIGGER trg_revision_accepts_updated_at BEFORE UPDATE ON revision_accepts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+    "DROP TRIGGER IF EXISTS trg_contract_qa_sessions_updated_at ON contract_qa_sessions",
+    "CREATE TRIGGER trg_contract_qa_sessions_updated_at BEFORE UPDATE ON contract_qa_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
 ]
 
 INDEX_STATEMENTS = [
@@ -179,6 +257,11 @@ INDEX_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_qa_session_contract ON contract_qa_sessions(contract_id)",
     "CREATE INDEX IF NOT EXISTS idx_qa_session_user ON contract_qa_sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_qa_msg_session ON contract_qa_messages(session_id)",
+    # Migration 004 indices
+    "CREATE INDEX IF NOT EXISTS idx_rule_findings_review ON rule_findings(review_id)",
+    "CREATE INDEX IF NOT EXISTS idx_human_decisions_review ON human_review_decisions(review_id)",
+    # Migration 005 indices
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
 ]
 
 
@@ -230,5 +313,5 @@ def run_migrations_sync(database_url: str | None = None) -> list[str]:
     """Sync wrapper for run_migrations."""
     import asyncio
 
-    db_url = database_url or os.getenv("DATABASE_URL", "postgresql://postgres:postgres123@localhost:15432/eduagent")
+    db_url = database_url or get_settings().database_url
     return asyncio.run(run_migrations(db_url))

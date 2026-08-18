@@ -8,8 +8,8 @@
       <!-- Login Tab (default) -->
       <template v-if="!showRegister">
         <el-form :model="loginForm" label-position="top" @submit.prevent="handleLogin">
-          <el-form-item label="用户名">
-            <el-input v-model="loginForm.username" placeholder="请输入用户名" />
+          <el-form-item label="用户名或邮箱">
+            <el-input v-model="loginForm.username" placeholder="请输入用户名或邮箱" />
           </el-form-item>
           <el-form-item label="密码">
             <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password />
@@ -36,6 +36,9 @@
         <el-form :model="regForm" label-position="top" @submit.prevent="handleRegister">
           <el-form-item label="用户名">
             <el-input v-model="regForm.username" placeholder="2-128 个字符" />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input v-model="regForm.email" placeholder="用于登录" />
           </el-form-item>
           <el-form-item label="密码">
             <el-input v-model="regForm.password" type="password" placeholder="至少 6 位" show-password />
@@ -114,7 +117,7 @@ async function handleLogin() {
 // ── Register state (public self-signup) ─────────────────────
 
 const showRegister = ref(false);
-const regForm = reactive({ username: '', password: '', confirm: '' });
+const regForm = reactive({ username: '', email: '', password: '', confirm: '' });
 const regLoading = ref(false);
 const regError = ref('');
 
@@ -122,8 +125,13 @@ async function handleRegister() {
   regError.value = '';
 
   const username = regForm.username.trim();
+  const email = regForm.email.trim();
   if (username.length < 2 || username.length > 128) {
     regError.value = '用户名需要 2-128 个字符';
+    return;
+  }
+  if (!email || !email.includes('@')) {
+    regError.value = '邮箱格式不正确';
     return;
   }
   if (regForm.password.length < 6) {
@@ -140,7 +148,7 @@ async function handleRegister() {
     const resp = await fetch('/api/v1/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password: regForm.password }),
+      body: JSON.stringify({ username, email, password: regForm.password }),
     });
 
     if (!resp.ok) {

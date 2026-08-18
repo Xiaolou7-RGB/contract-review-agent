@@ -72,6 +72,7 @@ class _DimReviewCard(BaseModel):
     level: str = Field(..., description="高 / 中 / 低 / 无")
     suggestion: str = Field(default="")
     risk_type: str = Field(default="")
+    search_query: str = Field(default="", description="精简的检索词（10-30字），提炼核心风险点")
 
 
 class _DimReviewResult(BaseModel):
@@ -103,6 +104,7 @@ def _build_dimension_prompt(
 - level: 风险等级（高/中/低/无），score≥0.7→高，0.4~0.7→中，<0.4→低，0→无
 - suggestion: 具体的修改建议或风险说明
 - risk_type: 风险类别（如：合同无效风险、赔偿条款失衡、争议解决不利等）
+- search_query: 用于检索相关法条的精简查询词（10-30字），直接提炼本风险的核心法律问题关键词，例如"民间借贷复利超过法定利率上限"、"借款期限约定不明"、"违约金和定金并存如何适用"，不要包含条款标题或客套话
 
 仅输出有实质性风险的条款（level != 无），未发现问题的条款不需要输出卡片。"""
 
@@ -138,6 +140,7 @@ async def _review_single_dimension(
             "span": clause.get("span", {}).get("page", str(clause.get("page", 1))),
             "suggestion": card.suggestion,
             "risk_type": card.risk_type,
+            "search_query": card.search_query or "",
         })
 
     logger.info(f"Dimension {dim['key']}: found {len(cards)} risk cards out of {len(clauses)} clauses")
@@ -226,7 +229,9 @@ def merge_review_cards(all_cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Merge all dimensions
         dimensions = list({c["dimension"] for c in cards})
         best["dimensions"] = dimensions
-        best["all_cards"] = cards
+        # NOTE: do NOT attach `all_cards` here — `best` is one of the dicts in
+        # `cards`, so `best["all_cards"] = cards` creates a reference cycle that
+        # makes LangGraph checkpoint serialization hit a recursion limit.
         merged.append(best)
 
     merged.sort(key=lambda c: level_order.get(c.get("level", "无"), 0), reverse=True)
@@ -307,5 +312,70 @@ async def multi_dim_review_node(state: ContractReviewState, on_dimension_done: A
     return {
         "review_cards": result["review_cards"],
         "degraded_review": result["degraded_review"],
+        "status": "reviewed",
+    }
+
+
+# ── LangGraph Send fan-out nodes (true graph-level parallelism) ──
+
+async def review_dimension_node(state: ContractReviewState) -> dict[str, Any]:
+    """LangGraph Send fan-out node: review a single dimension.
+
+    Receives ``dimension_key`` from the Send payload (merged into the branch
+    state by LangGraph) and returns risk cards for that one dimension only.
+    Results are reducer-merged into ``dimension_cards`` (operator.add) across
+    all parallel branches, then aggregated downstream by
+    ``aggregate_review_node``.
+
+    Non-fatal: a failing dimension returns an empty card list so the whole
+    graph never blocks on a single dimension error.
+    """
+    dim_key = state.get("dimension_key", "")
+    dim = DIMENSIONS.get(dim_key)
+    clauses = state.get("clauses", [])
+
+    if dim is None:
+        logger.warning(f"Unknown dimension key: {dim_key!r}, returning empty cards")
+        return {"dimension_cards": []}
+
+    trimmed = trim_clauses_for_budget(clauses)
+    try:
+        cards = await _review_single_dimension(trimmed, dim)
+    except Exception as e:
+        logger.warning(f"Dimension {dim_key} review failed (non-fatal): {e}")
+        cards = []
+
+    return {"dimension_cards": cards}
+
+
+async def aggregate_review_node(state: ContractReviewState) -> dict[str, Any]:
+    """LangGraph fan-in node: merge per-dimension cards into ``review_cards``.
+
+    Falls back to a single combined review only when every dimension failed
+    (empty ``dimension_cards``), mirroring the original degradation contract.
+    """
+    all_cards = list(state.get("dimension_cards", []))
+    degraded = False
+
+    if not all_cards:
+        clauses = state.get("clauses", [])
+        contract_type = state.get("contract_type", "其他")
+        try:
+            all_cards = await _fallback_combined_review(clauses, contract_type)
+            degraded = True
+            logger.warning("All dimensions failed — used fallback combined review")
+        except Exception as e:
+            logger.error(f"Fallback combined review also failed: {e}")
+            all_cards = []
+            degraded = True
+
+    merged = merge_review_cards(all_cards)
+    logger.info(
+        f"Aggregated review: {len(all_cards)} cards -> {len(merged)} merged, degraded={degraded}"
+    )
+
+    return {
+        "review_cards": merged,
+        "degraded_review": degraded,
         "status": "reviewed",
     }
