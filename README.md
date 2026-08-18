@@ -8,7 +8,7 @@
 - **多维风险评审**：法律、合规、财务、权责四个维度，LLM 逐条评分并给出风险等级（高/中/低）
 - **RAG 法条检索**：Milvus 混合检索（向量 + 关键词）+ 交叉编码器重排，审查结论附法条依据
 - **修订建议**：针对高风险条款生成可直接采纳/驳回的修订文本，支持幂等确认与律师复核标记
-- **法律问答（QA）**：审查完成后可就合同内容对话提问；检索侧实现多查询拆分 + Round-Robin 合并、口语化问题 HyDE 假设文档增强，显著提升口语提问的法条召回
+- **法律问答（QA）**：审查完成后可就合同内容对话提问；检索侧实现多查询拆分 + Round-Robin 合并、口语化问题 HyDE 假设文档增强、检索置信度三档路由（弱命中弱化表述 + 补北大法宝真实判例佐证），显著提升口语提问的法条召回与可信度
 - **审查历史**：历史报告随时回看，修订状态持久化
 
 ## 审查流水线
@@ -29,7 +29,7 @@
 | 本地模型 | HuggingFace embedding + reranker（首次运行自动下载至 `models/`） |
 | 数据库 | PostgreSQL |
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
-| 测试 | pytest（235 个用例）+ 检索质量评测脚本（黄金集 recall/MRR） |
+| 测试 | pytest（311 个用例）+ 检索质量评测脚本（黄金集 recall/MRR） |
 
 ## 项目结构
 
@@ -116,9 +116,10 @@ PKULAW_CASE_URL=https://apim-gateway.pkulaw.com/mcp-case
 - **仅 `level == "高"` 且命中语义路由映射表 `need_case=True` 才调 MCP**——在风险等级基础上按风险类型细分（违约/合同无效/免责/担保/竞业/争议解决/劳动/赔偿失衡等需补判例；财务/价格/付款/知产/保密/数据/权责/合规等不调），未知类型默认不调省额度；可由 `enable_case_semantic_route` 开关回滚为「仅按风险等级触发」旧逻辑
 - **检索词经 LLM refine**：命中后把法条向查询改写为案由 + 争议焦点的判例向词，提升真实判例命中精度；refine 失败降级用原始词
 - **MCP 失败/超时静默降级**：`search_cases` 返回空列表，审查流水线照常走本地知识库，绝不中断
+- **QA 侧复用**：法律问答在「检索置信度三档路由」判为 `WEAK`（法条弱命中）时，同样调 `search_cases(原始问题)` 补真实判例作「参考判例」佐证，独立节注入上下文、不进 `citations` 编号；由 `qa_case_mcp_enabled` 开关控制
 - 证据链（修订建议的参考）：真实判例(pkulaw) → 示范条款(kb_template) → 裁判规则(kb_case) → 司法解释(kb_law) → 民法典(civil_code_hybrid)
 
-相关代码：`backend/core/pkulaw_client.py`（MCP 客户端）、`backend/agents/contract_review/rag_retriever.py`（高风险触发 + 降级）、`revision_writer.py`（证据分组展示）。
+相关代码：`backend/mcp/pkulaw_client.py`（MCP 客户端）、`backend/agents/contract_review/rag_retriever.py`（高风险触发 + 降级）、`backend/agents/contract_qa/context_builder.py`（QA 弱命中档补判例）、`revision_writer.py`（证据分组展示）。
 
 ## 面试备战材料
 
