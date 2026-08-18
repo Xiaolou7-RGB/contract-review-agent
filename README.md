@@ -113,7 +113,8 @@ PKULAW_CASE_URL=https://apim-gateway.pkulaw.com/mcp-case
 
 ### 架构：离线兜底 + 在线增强
 
-- **仅 `level == "高"` 的风险条款才调 MCP**——控制额度消耗，中低风险走本地 `kb_case` 秒回
+- **仅 `level == "高"` 且命中语义路由映射表 `need_case=True` 才调 MCP**——在风险等级基础上按风险类型细分（违约/合同无效/免责/担保/竞业/争议解决/劳动/赔偿失衡等需补判例；财务/价格/付款/知产/保密/数据/权责/合规等不调），未知类型默认不调省额度；可由 `enable_case_semantic_route` 开关回滚为「仅按风险等级触发」旧逻辑
+- **检索词经 LLM refine**：命中后把法条向查询改写为案由 + 争议焦点的判例向词，提升真实判例命中精度；refine 失败降级用原始词
 - **MCP 失败/超时静默降级**：`search_cases` 返回空列表，审查流水线照常走本地知识库，绝不中断
 - 证据链（修订建议的参考）：真实判例(pkulaw) → 示范条款(kb_template) → 裁判规则(kb_case) → 司法解释(kb_law) → 民法典(civil_code_hybrid)
 
