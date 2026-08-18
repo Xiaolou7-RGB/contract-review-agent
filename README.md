@@ -118,3 +118,7 @@ PKULAW_CASE_URL=https://apim-gateway.pkulaw.com/mcp-case
 - 证据链（修订建议的参考）：真实判例(pkulaw) → 示范条款(kb_template) → 裁判规则(kb_case) → 司法解释(kb_law) → 民法典(civil_code_hybrid)
 
 相关代码：`backend/core/pkulaw_client.py`（MCP 客户端）、`backend/agents/contract_review/rag_retriever.py`（高风险触发 + 降级）、`revision_writer.py`（证据分组展示）。
+
+## 面试备战材料
+
+项目技术细节与面试表达可参考 [`outputs/合同审查项目-面试问答手册.md`](outputs/合同审查项目-面试问答手册.md)：覆盖高频面试题与标准回答、架构设计理由（6 节点 / 规则闸门 / 混合检索 / HITL / MCP）、项目亮点、团队叙事与数字口径表（技术评测指标可说、业务效果数字禁编）。
