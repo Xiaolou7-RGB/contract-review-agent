@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     pkulaw_timeout: float = 8.0
     # MCP 语义路由开关：True=映射表+LLM refine 定向触发；False=回滚到旧"仅按风险等级触发"
     enable_case_semantic_route: bool = True
+    # QA 问答 WEAK 档补真实判例开关：True=弱法条命中时调北大法宝补判例；False=回滚（仅弱化表述）
+    qa_case_mcp_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

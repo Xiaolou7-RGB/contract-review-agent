@@ -21,8 +21,10 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.agents.contract_review.rag_retriever import cn_to_int
+from backend.config import get_settings
 from backend.core.context_manager import TOKEN_BUDGET, estimate_tokens
 from backend.core.rag import get_kb_client
+from backend.mcp.pkulaw_client import search_cases
 
 logger = logging.getLogger(__name__)
 
@@ -613,6 +615,16 @@ async def build_qa_context(db: Any, contract_id: int, question: str) -> dict[str
     # generated from the user's colloquial phrasing, not from the enriched
     # query (whose injected risk_type terms would bias the hypothesis).
     law_hits = await retrieve_law_hits(law_queries, hyde_question=question)
+    tier = classify_law_confidence(law_hits)
+    # 二期：WEAK 档补真实判例（北大法宝 MCP，失败静默降级为 []）。
+    # 判例仅作「参考佐证」，不进 citations 编号，避免与法条引用语义混淆。
+    case_refs: list[dict[str, Any]] = []
+    if tier == "WEAK" and get_settings().qa_case_mcp_enabled:
+        case_refs = await search_cases(question)
+        if case_refs:
+            logger.info(
+                f"QA WEAK 档补 {len(case_refs)} 条北大法宝判例 for question={question[:40]!r}"
+            )
     return {
         **sources,
         "question": question,
@@ -620,7 +632,8 @@ async def build_qa_context(db: Any, contract_id: int, question: str) -> dict[str
         "law_hits": law_hits,
         "citations": build_citations(law_hits),
         "law_empty": not law_hits,
-        "confidence_tier": classify_law_confidence(law_hits),
+        "confidence_tier": tier,
+        "case_refs": case_refs,
     }
 
 
@@ -697,6 +710,21 @@ def _law_block(law_hits: list[dict[str, Any]], law_chars: int) -> str:
     return "\n".join(lines)
 
 
+def _case_ref_block(case_refs: list[dict[str, Any]], gist_chars: int = 200) -> str:
+    """Render real case references as a standalone block (not numbered citations)."""
+    lines = []
+    for c in case_refs:
+        line = (
+            f"- {c.get('title', '')}（{c.get('case_no', '')}）"
+            f"{c.get('court', '')} {c.get('date', '')}"
+        )
+        gist = (c.get("case_gist") or "").strip()
+        if gist:
+            line += f" 裁判要旨：{_trunc(gist, gist_chars)}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _render_with(ctx: dict[str, Any], lv: dict[str, int]) -> str:
     clause_titles = {
         c["clause_id"]: (f"【{c['title']}】" if c.get("title") else "")
@@ -724,6 +752,10 @@ def _render_with(ctx: dict[str, Any], lv: dict[str, int]) -> str:
     law_hits = ctx.get("law_hits", [])
     if law_hits:
         sections.append("【实时检索到的法律依据（引用时使用编号）】\n" + _law_block(law_hits, lv["law_chars"]))
+
+    case_refs = ctx.get("case_refs", [])
+    if case_refs:
+        sections.append("【参考判例（真实裁判文书，非法条依据）】\n" + _case_ref_block(case_refs))
 
     return "\n\n".join(sections)
 
